@@ -9,6 +9,7 @@ ROS_LOG_DIR_PATH="/tmp/arm_gazebo_smoke_test_logs"
 GAZEBO_HOME_PATH="/tmp/arm_gazebo_home"
 LAUNCH_LOG_PATH="/tmp/arm_gazebo_smoke_test.launch.log"
 LAUNCH_TIMEOUT_SECONDS=20
+DEFAULT_GAZEBO_MASTER_URI="http://127.0.0.1:11346"
 
 echo "== Dependency check (Gazebo) =="
 "${ROOT_DIR}/scripts/check_dependencies.sh" --with-gazebo
@@ -39,6 +40,12 @@ mkdir -p "${ROS_LOG_DIR_PATH}"
 mkdir -p "${GAZEBO_HOME_PATH}"
 export ROS_LOG_DIR="${ROS_LOG_DIR_PATH}"
 export HOME="${GAZEBO_HOME_PATH}"
+export GAZEBO_MASTER_URI="${GAZEBO_MASTER_URI:-${DEFAULT_GAZEBO_MASTER_URI}}"
+export GAZEBO_IP="${GAZEBO_IP:-127.0.0.1}"
+export GAZEBO_HOSTNAME="${GAZEBO_HOSTNAME:-127.0.0.1}"
+
+echo "[info] Using GAZEBO_MASTER_URI=${GAZEBO_MASTER_URI}"
+echo "[info] Using GAZEBO_IP=${GAZEBO_IP}"
 
 set +e
 timeout "${LAUNCH_TIMEOUT_SECONDS}s" ros2 launch arm_bringup gazebo_arm.launch.py \
@@ -48,6 +55,13 @@ launch_exit_code=$?
 set -e
 
 if grep -q "process has died" "${LAUNCH_LOG_PATH}"; then
+  if grep -Eq "Unable to get local interface addresses|Unable to start server\\[open: Operation not permitted\\]|Error creating socket: Operation not permitted" "${LAUNCH_LOG_PATH}" \
+    || grep -Eq "Unable to get local interface addresses|Unable to start server\\[open: Operation not permitted\\]" "${GAZEBO_HOME_PATH}"/.gazebo/server-*/gzserver.log 2>/dev/null; then
+    echo "Gazebo smoke test failed: sandbox or local socket permissions blocked Gazebo networking bootstrap."
+    echo "[hint] Re-run outside restricted sandbox or verify local socket permissions."
+    echo "[hint] Check ${LAUNCH_LOG_PATH}"
+    exit 1
+  fi
   echo "Gazebo smoke test failed: a launch process died."
   echo "[hint] Check ${LAUNCH_LOG_PATH}"
   exit 1

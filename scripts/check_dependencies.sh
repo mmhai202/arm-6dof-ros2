@@ -4,10 +4,23 @@ set -euo pipefail
 
 ROS_SETUP="/opt/ros/humble/setup.bash"
 with_gazebo=0
+with_moveit=0
 
-if [[ "${1:-}" == "--with-gazebo" ]]; then
-  with_gazebo=1
-fi
+for arg in "$@"; do
+  case "${arg}" in
+    --with-gazebo)
+      with_gazebo=1
+      ;;
+    --with-moveit)
+      with_moveit=1
+      ;;
+    *)
+      echo "[error] Unknown option: ${arg}"
+      echo "Usage: $0 [--with-gazebo] [--with-moveit]"
+      exit 1
+      ;;
+  esac
+done
 
 system_commands=(
   python3
@@ -38,6 +51,16 @@ if [[ "${with_gazebo}" -eq 1 ]]; then
   ros_packages+=(
     gazebo_ros
     gazebo_ros2_control
+  )
+fi
+
+if [[ "${with_moveit}" -eq 1 ]]; then
+  ros_packages+=(
+    moveit_kinematics
+    moveit_planners_ompl
+    moveit_ros_move_group
+    moveit_ros_visualization
+    moveit_simple_controller_manager
   )
 fi
 

@@ -1,6 +1,10 @@
+import os
+
+from ament_index_python.packages import get_package_prefix
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, RegisterEventHandler, TimerAction
 from launch.conditions import IfCondition
+from launch.event_handlers import OnProcessExit
 from launch.substitutions import LaunchConfiguration
 from launch.substitutions import Command, FindExecutable, PathJoinSubstitution
 from launch_ros.actions import Node
@@ -9,6 +13,7 @@ from launch_ros.substitutions import FindPackageShare
 
 def generate_launch_description():
     use_rviz = LaunchConfiguration("use_rviz")
+    auto_home = LaunchConfiguration("auto_home")
     ros2_control_plugin = LaunchConfiguration("ros2_control_plugin")
     ros2_control_system_name = LaunchConfiguration("ros2_control_system_name")
 
@@ -20,6 +25,12 @@ def generate_launch_description():
     )
     rviz_config_file = PathJoinSubstitution(
         [FindPackageShare("arm_bringup"), "rviz", "arm.rviz"]
+    )
+    trajectory_goal_script = os.path.join(
+        get_package_prefix("arm_control"),
+        "lib",
+        "arm_control",
+        "send_trajectory_goal.py",
     )
 
     robot_description = {
@@ -67,6 +78,30 @@ def generate_launch_description():
         output="screen",
     )
 
+    auto_home_process = ExecuteProcess(
+        cmd=[
+            FindExecutable(name="python3"),
+            trajectory_goal_script,
+            "--pose",
+            "home",
+            "--duration",
+            "2",
+            "--server-timeout",
+            "10",
+            "--result-timeout",
+            "10",
+        ],
+        condition=IfCondition(auto_home),
+        output="screen",
+    )
+
+    auto_home_after_arm_controller = RegisterEventHandler(
+        OnProcessExit(
+            target_action=arm_controller_spawner,
+            on_exit=[TimerAction(period=1.0, actions=[auto_home_process])],
+        )
+    )
+
     rviz_node = Node(
         package="rviz2",
         executable="rviz2",
@@ -83,6 +118,11 @@ def generate_launch_description():
                 description="Enable RViz in the baseline launch.",
             ),
             DeclareLaunchArgument(
+                "auto_home",
+                default_value="true",
+                description="Send the ready-pose home goal once after the baseline controllers activate.",
+            ),
+            DeclareLaunchArgument(
                 "ros2_control_plugin",
                 default_value="mock_components/GenericSystem",
                 description="ros2_control backend plugin for the robot description.",
@@ -96,6 +136,7 @@ def generate_launch_description():
             ros2_control_node,
             joint_state_broadcaster_spawner,
             arm_controller_spawner,
+            auto_home_after_arm_controller,
             rviz_node,
         ]
     )

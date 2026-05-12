@@ -4,14 +4,20 @@ Launch package for the simulation baseline.
 
 It owns:
 
-* RViz bringup
+* canonical fake-system bringup in RViz or headless mode
 * controller bringup
-* Gazebo launch experiments
+* Gazebo Classic launch experiments as an optional path
 
 ## Common Commands
 
 ```bash
 ros2 launch arm_bringup view_arm.launch.py
+```
+
+`view_arm.launch.py` is the canonical Phase 1 launch path. It sends a short `home` goal automatically after controller activation. Disable that behavior with:
+
+```bash
+ros2 launch arm_bringup view_arm.launch.py auto_home:=false
 ```
 
 ```bash

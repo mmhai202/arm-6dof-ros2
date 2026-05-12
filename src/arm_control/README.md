@@ -6,6 +6,7 @@ It currently provides:
 
 * `joint_state_broadcaster`
 * `arm_controller` based on `joint_trajectory_controller`
+* the installed `send_trajectory_goal.py` helper used by the baseline launch auto-home behavior
 
 ## Common Commands
 
