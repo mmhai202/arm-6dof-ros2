@@ -4,9 +4,9 @@ project(arm_planning)
 find_package(ament_cmake REQUIRED)
 
 install(PROGRAMS
-  ../../scripts/plan_joint_trajectory.py
-  ../../scripts/arm_planning_service.py
-  ../../scripts/call_planning_service.py
+  scripts/plan_joint_trajectory.py
+  scripts/arm_planning_service.py
+  scripts/call_planning_service.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

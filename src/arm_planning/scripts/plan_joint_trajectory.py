@@ -46,7 +46,7 @@ def find_workspace_guard_file():
             pass
 
     candidates.append(
-        Path(__file__).resolve().parents[1] / "src" / "arm_planning" / "config" / "workspace_guard.yaml"
+        Path(__file__).resolve().parents[1] / "config" / "workspace_guard.yaml"
     )
 
     for candidate in candidates:
@@ -70,7 +70,7 @@ def find_arm_xacro_file():
             pass
 
     candidates.append(
-        Path(__file__).resolve().parents[1] / "src" / "arm_description" / "urdf" / "arm.urdf.xacro"
+        Path(__file__).resolve().parents[2] / "arm_description" / "urdf" / "arm.urdf.xacro"
     )
 
     for candidate in candidates:
@@ -94,7 +94,7 @@ def find_named_poses_file():
             pass
 
     candidates.append(
-        Path(__file__).resolve().parents[1] / "src" / "arm_control" / "config" / "named_poses.yaml"
+        Path(__file__).resolve().parents[2] / "arm_control" / "config" / "named_poses.yaml"
     )
 
     for candidate in candidates:

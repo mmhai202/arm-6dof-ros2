@@ -41,7 +41,7 @@ def find_named_poses_file():
             pass
 
     candidates.append(
-        Path(__file__).resolve().parents[1] / "src" / "arm_control" / "config" / "named_poses.yaml"
+        Path(__file__).resolve().parents[1] / "config" / "named_poses.yaml"
     )
 
     for candidate in candidates:

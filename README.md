@@ -6,7 +6,7 @@ The project provides robot description, bringup, controller validation, and an o
 
 ## Project Architecture
 
-The workspace is split into four packages with clear ownership:
+The workspace is split into six packages with clear ownership:
 
 * `arm_description`
   source of truth for the robot model, frame tree, joint limits, and `ros2_control` definition
@@ -17,15 +17,74 @@ The workspace is split into four packages with clear ownership:
 * `arm_control`
   controller configuration for `joint_state_broadcaster` and `joint_trajectory_controller`
 
+* `arm_planning`
+  project-owned joint-space planning and execution that does not depend on MoveIt
+
+* `arm_msgs`
+  custom service interfaces for the project-owned planning API
+
 * `arm_moveit_config`
   minimal MoveIt 2 SRDF, planning config, controller mapping, and launch wiring for the existing baseline
 
 ## Quick Start
 
-Run the main demo script:
+Run from the workspace root directory.
+
+Optional cleanup before a fresh rebuild:
+
+```bash
+./scripts/clean_ws.sh
+```
+
+### 1) Custom Planning Mode (No MoveIt)
+
+Start planning mode (this script runs dependency check and build):
+
+```bash
+./scripts/run_planning_mode.sh
+```
+
+Options:
+
+```bash
+./scripts/run_planning_mode.sh --headless
+./scripts/run_planning_mode.sh --auto-home
+```
+
+Call the planning service from another shell:
+
+```bash
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+ros2 run arm_planning call_planning_service.py --list-poses
+ros2 run arm_planning call_planning_service.py --pose home
+ros2 run arm_planning call_planning_service.py --pose-sequence home reach_forward inspection home
+```
+
+### 2) MoveIt Mode
+
+Start MoveIt demo (this script runs MoveIt dependency check and build):
 
 ```bash
 ./scripts/run_moveit_demo.sh
 ```
 
-This script is the recommended entrypoint for the current project. It checks MoveIt dependencies, cleans the workspace, rebuilds it, launches the fake-system baseline together with MoveIt, and opens the RViz Motion Planning workflow for planning and execution through `arm_controller`.
+Headless mode:
+
+```bash
+./scripts/run_moveit_demo.sh --headless
+```
+
+Key top-level scripts:
+
+* `run_planning_mode.sh`
+  launch custom planning mode on top of the fake-system baseline
+
+* `run_moveit_demo.sh`
+  build and launch MoveIt demo on top of the same baseline
+
+* `clean_ws.sh`
+  remove `build/`, `install/`, `log/`, and Python cache
+
+* `check_dependencies.sh`
+  verify system commands and ROS packages for baseline, MoveIt, or Gazebo

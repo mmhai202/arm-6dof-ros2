@@ -4,7 +4,7 @@ project(arm_control)
 find_package(ament_cmake REQUIRED)
 
 install(PROGRAMS
-  ../../scripts/send_trajectory_goal.py
+  scripts/send_trajectory_goal.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

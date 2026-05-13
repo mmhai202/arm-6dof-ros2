@@ -3,14 +3,13 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
 workspace_dirs=(
   "${ROOT_DIR}/build"
   "${ROOT_DIR}/install"
   "${ROOT_DIR}/log"
 )
 
-echo "== Remove ROS 2 workspace directories =="
+echo "== Clean workspace =="
 for dir_path in "${workspace_dirs[@]}"; do
   if [[ -e "${dir_path}" ]]; then
     echo "[remove] ${dir_path}"
@@ -33,6 +32,3 @@ while IFS= read -r cache_file; do
   echo "[remove] ${cache_file}"
   rm -f "${cache_file}"
 done < <(find "${ROOT_DIR}" -type f \( -name "*.pyc" -o -name "*.pyo" \) -print)
-
-echo
-echo "Workspace cleanup completed."
