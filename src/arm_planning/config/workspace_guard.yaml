@@ -1,0 +1,5 @@
+workspace_guard:
+  frame: base_footprint
+  max_tcp_radius: 1.05
+  min_tcp_height: 0.05
+  max_tcp_height: 1.20

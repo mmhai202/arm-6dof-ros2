@@ -1,21 +1,25 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>arm_control</name>
+  <name>arm_planning</name>
   <version>0.0.0</version>
-  <description>Control package for the arm simulation workspace.</description>
+  <description>Project-owned planning package for the arm simulation workspace.</description>
   <maintainer email="hai372002@gmail.com">Hai</maintainer>
   <license>Proprietary</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <exec_depend>ament_index_python</exec_depend>
-  <exec_depend>controller_manager</exec_depend>
+  <exec_depend>arm_bringup</exec_depend>
+  <exec_depend>arm_control</exec_depend>
+  <exec_depend>arm_description</exec_depend>
+  <exec_depend>arm_msgs</exec_depend>
   <exec_depend>control_msgs</exec_depend>
-  <exec_depend>hardware_interface</exec_depend>
-  <exec_depend>joint_state_broadcaster</exec_depend>
-  <exec_depend>joint_trajectory_controller</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>trajectory_msgs</exec_depend>
+  <exec_depend>xacro</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

@@ -6,6 +6,7 @@ It owns:
 
 * canonical fake-system bringup in RViz or headless mode
 * controller bringup
+* the baseline runtime used by both the custom planner path and the MoveIt path
 * Gazebo Classic launch experiments as an optional path
 
 ## Common Commands

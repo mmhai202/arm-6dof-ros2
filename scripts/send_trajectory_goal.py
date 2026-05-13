@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
 
 import argparse
+from pathlib import Path
 import sys
+
+try:
+    from ament_index_python.packages import get_package_share_directory
+except ImportError:
+    get_package_share_directory = None
 
 from builtin_interfaces.msg import Duration
 from control_msgs.action import FollowJointTrajectory
 import rclpy
 from rclpy.action import ActionClient
 from trajectory_msgs.msg import JointTrajectoryPoint
+import yaml
 
 
 JOINT_NAMES = [
@@ -19,14 +26,50 @@ JOINT_NAMES = [
     "joint_6",
 ]
 
-POSE_PRESETS = {
-    "home": [0.0, -1.05, 1.25, 0.0, 0.35, 0.0],
-    "reach_forward": [0.0, -0.5, 0.8, 0.0, 0.4, 0.0],
-    "reach_high": [0.1, -1.0, 1.2, 0.0, 0.6, 0.0],
-    "left_reach": [0.8, -0.7, 1.0, 0.2, 0.5, 0.1],
-    "wrist_down": [0.2, -0.9, 1.1, 0.0, -0.6, 0.0],
-    "inspection": [0.6, -0.8, 1.0, 0.0, 0.8, 0.2],
-}
+
+def find_named_poses_file():
+    candidates = []
+
+    if get_package_share_directory is not None:
+        try:
+            candidates.append(
+                Path(get_package_share_directory("arm_control"))
+                / "config"
+                / "named_poses.yaml"
+            )
+        except Exception:
+            pass
+
+    candidates.append(
+        Path(__file__).resolve().parents[1] / "src" / "arm_control" / "config" / "named_poses.yaml"
+    )
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+
+    raise FileNotFoundError("Could not locate arm_control/config/named_poses.yaml.")
+
+
+def load_pose_presets():
+    named_poses_file = find_named_poses_file()
+    with open(named_poses_file, "r", encoding="utf-8") as file_handle:
+        named_poses = yaml.safe_load(file_handle) or {}
+
+    pose_presets = named_poses.get("poses", {})
+    if not pose_presets:
+        raise ValueError(f"No poses defined in {named_poses_file}.")
+
+    for pose_name, positions in pose_presets.items():
+        if len(positions) != len(JOINT_NAMES):
+            raise ValueError(
+                f"Pose '{pose_name}' must define exactly {len(JOINT_NAMES)} joint values."
+            )
+
+    return pose_presets
+
+
+POSE_PRESETS = load_pose_presets()
 
 
 def parse_args():
