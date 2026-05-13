@@ -6,59 +6,65 @@
   <xacro:arg name="gazebo_controller_config" default=""/>
 
   <xacro:property name="PI_CONST" value="3.1415926535897931"/>
-  <xacro:property name="base_radius" value="0.16"/>
-  <xacro:property name="base_height" value="0.20"/>
-  <xacro:property name="shoulder_height" value="0.26"/>
-  <xacro:property name="shoulder_forward_offset" value="0.05"/>
-  <xacro:property name="shoulder_box_x" value="0.14"/>
-  <xacro:property name="shoulder_box_y" value="0.12"/>
-  <xacro:property name="upper_arm_length" value="0.42"/>
-  <xacro:property name="forearm_length" value="0.36"/>
-  <xacro:property name="arm_box_y" value="0.09"/>
-  <xacro:property name="arm_box_z" value="0.10"/>
-  <xacro:property name="wrist_1_length" value="0.11"/>
-  <xacro:property name="wrist_2_length" value="0.09"/>
-  <xacro:property name="wrist_3_length" value="0.07"/>
-  <xacro:property name="wrist_box_size" value="0.055"/>
-  <xacro:property name="flange_radius" value="0.04"/>
-  <xacro:property name="flange_thickness" value="0.025"/>
-  <xacro:property name="tool_radius" value="0.018"/>
-  <xacro:property name="tool_length" value="0.10"/>
-  <xacro:property name="base_visual_cap_radius" value="0.09"/>
-  <xacro:property name="base_visual_cap_height" value="0.05"/>
-  <xacro:property name="shoulder_collar_radius" value="0.075"/>
-  <xacro:property name="shoulder_collar_height" value="0.065"/>
-  <xacro:property name="shoulder_head_length" value="0.14"/>
-  <xacro:property name="shoulder_head_width" value="0.115"/>
-  <xacro:property name="shoulder_head_height" value="0.095"/>
-  <xacro:property name="arm_shell_height" value="0.075"/>
-  <xacro:property name="arm_shell_width" value="0.07"/>
-  <xacro:property name="arm_end_cap_radius" value="0.042"/>
-  <xacro:property name="arm_end_cap_length" value="0.05"/>
-  <xacro:property name="wrist_hub_radius" value="0.034"/>
-  <xacro:property name="wrist_hub_length" value="0.036"/>
-  <xacro:property name="tool_guard_radius" value="0.024"/>
-  <xacro:property name="tool_guard_height" value="0.012"/>
 
-  <xacro:property name="joint_1_lower" value="${-PI_CONST}"/>
-  <xacro:property name="joint_1_upper" value="${PI_CONST}"/>
-  <xacro:property name="joint_2_lower" value="-2.3"/>
-  <xacro:property name="joint_2_upper" value="1.5"/>
-  <xacro:property name="joint_3_lower" value="-2.4"/>
-  <xacro:property name="joint_3_upper" value="2.2"/>
-  <xacro:property name="joint_4_lower" value="${-PI_CONST}"/>
-  <xacro:property name="joint_4_upper" value="${PI_CONST}"/>
-  <xacro:property name="joint_5_lower" value="-2.4"/>
-  <xacro:property name="joint_5_upper" value="2.4"/>
-  <xacro:property name="joint_6_lower" value="${-PI_CONST}"/>
-  <xacro:property name="joint_6_upper" value="${PI_CONST}"/>
+  <!-- UR7e kinematic dimensions from Universal Robots ur_description -->
+  <xacro:property name="shoulder_z" value="0.1625"/>
+  <xacro:property name="upper_arm_x" value="-0.425"/>
+  <xacro:property name="forearm_x" value="-0.3922"/>
+  <xacro:property name="forearm_z" value="0.1333"/>
+  <xacro:property name="wrist_1_y" value="-0.0997"/>
+  <xacro:property name="wrist_2_y" value="0.0996"/>
 
-  <xacro:property name="large_joint_damping" value="0.25"/>
-  <xacro:property name="large_joint_friction" value="0.08"/>
-  <xacro:property name="medium_joint_damping" value="0.18"/>
-  <xacro:property name="medium_joint_friction" value="0.05"/>
-  <xacro:property name="wrist_joint_damping" value="0.10"/>
-  <xacro:property name="wrist_joint_friction" value="0.03"/>
+  <!-- Approximate visual dimensions tuned to the UR7e silhouette -->
+  <xacro:property name="base_radius" value="0.105"/>
+  <xacro:property name="base_height" value="0.128"/>
+  <xacro:property name="base_neck_radius" value="0.062"/>
+  <xacro:property name="base_neck_height" value="${shoulder_z - base_height}"/>
+  <xacro:property name="shoulder_hub_radius" value="0.070"/>
+  <xacro:property name="shoulder_hub_length" value="0.120"/>
+  <xacro:property name="shoulder_column_radius" value="0.050"/>
+  <xacro:property name="shoulder_column_length" value="0.115"/>
+  <xacro:property name="upper_arm_body_length" value="0.295"/>
+  <xacro:property name="upper_arm_body_width" value="0.090"/>
+  <xacro:property name="upper_arm_body_height" value="0.102"/>
+  <xacro:property name="upper_arm_cap_radius" value="0.053"/>
+  <xacro:property name="forearm_body_length" value="0.302"/>
+  <xacro:property name="forearm_body_width" value="0.082"/>
+  <xacro:property name="forearm_body_height" value="0.094"/>
+  <xacro:property name="forearm_cap_radius" value="0.048"/>
+  <xacro:property name="forearm_visual_length" value="0.4142339073518729"/>
+  <xacro:property name="forearm_visual_pitch" value="2.813963855577728"/>
+  <xacro:property name="wrist_radius" value="0.040"/>
+  <xacro:property name="wrist_1_length" value="0.0997"/>
+  <xacro:property name="wrist_2_length" value="0.0996"/>
+  <xacro:property name="wrist_3_radius" value="0.034"/>
+  <xacro:property name="flange_radius" value="0.032"/>
+  <xacro:property name="flange_thickness" value="0.018"/>
+  <xacro:property name="tool_radius" value="0.020"/>
+  <xacro:property name="tool_length" value="0.060"/>
+  <xacro:property name="accent_ring_radius_large" value="0.061"/>
+  <xacro:property name="accent_ring_radius_medium" value="0.049"/>
+  <xacro:property name="accent_ring_radius_small" value="0.035"/>
+  <xacro:property name="accent_ring_length" value="0.010"/>
+
+  <xacro:property name="joint_1_lower" value="${-2.0 * PI_CONST}"/>
+  <xacro:property name="joint_1_upper" value="${2.0 * PI_CONST}"/>
+  <xacro:property name="joint_2_lower" value="${-2.0 * PI_CONST}"/>
+  <xacro:property name="joint_2_upper" value="${2.0 * PI_CONST}"/>
+  <xacro:property name="joint_3_lower" value="${-PI_CONST}"/>
+  <xacro:property name="joint_3_upper" value="${PI_CONST}"/>
+  <xacro:property name="joint_4_lower" value="${-2.0 * PI_CONST}"/>
+  <xacro:property name="joint_4_upper" value="${2.0 * PI_CONST}"/>
+  <xacro:property name="joint_5_lower" value="${-2.0 * PI_CONST}"/>
+  <xacro:property name="joint_5_upper" value="${2.0 * PI_CONST}"/>
+  <xacro:property name="joint_6_lower" value="${-2.0 * PI_CONST}"/>
+  <xacro:property name="joint_6_upper" value="${2.0 * PI_CONST}"/>
+  <xacro:property name="joint_velocity_limit" value="${PI_CONST}"/>
+
+  <xacro:property name="large_joint_damping" value="0.22"/>
+  <xacro:property name="large_joint_friction" value="0.06"/>
+  <xacro:property name="wrist_joint_damping" value="0.08"/>
+  <xacro:property name="wrist_joint_friction" value="0.02"/>
 
   <xacro:macro name="box_inertial" params="mass x y z origin_x:=0.0 origin_y:=0.0 origin_z:=0.0">
     <inertial>
@@ -73,10 +79,10 @@
     </inertial>
   </xacro:macro>
 
-  <xacro:macro name="cylinder_inertial" params="mass radius length origin_x:=0.0 origin_y:=0.0 origin_z:=0.0">
+  <xacro:macro name="cylinder_inertial" params="mass radius length origin_x:=0.0 origin_y:=0.0 origin_z:=0.0 rpy:='0 0 0'">
     <inertial>
       <mass value="${mass}"/>
-      <origin xyz="${origin_x} ${origin_y} ${origin_z}" rpy="0 0 0"/>
+      <origin xyz="${origin_x} ${origin_y} ${origin_z}" rpy="${rpy}"/>
       <inertia ixx="${mass * (3.0 * radius * radius + length * length) / 12.0}"
                ixy="0.0"
                ixz="0.0"
@@ -86,20 +92,20 @@
     </inertial>
   </xacro:macro>
 
-  <material name="dark_gray">
-    <color rgba="0.25 0.25 0.28 1.0"/>
+  <material name="ur_dark">
+    <color rgba="0.12 0.13 0.15 1.0"/>
   </material>
 
-  <material name="light_gray">
-    <color rgba="0.75 0.75 0.78 1.0"/>
+  <material name="ur_black">
+    <color rgba="0.08 0.09 0.10 1.0"/>
   </material>
 
-  <material name="orange">
-    <color rgba="0.92 0.46 0.12 1.0"/>
+  <material name="ur_metal">
+    <color rgba="0.80 0.82 0.84 1.0"/>
   </material>
 
-  <material name="silver">
-    <color rgba="0.85 0.85 0.88 1.0"/>
+  <material name="ur_blue">
+    <color rgba="0.13 0.73 0.92 1.0"/>
   </material>
 
   <link name="base_footprint"/>
@@ -110,225 +116,208 @@
         <cylinder radius="${base_radius}" length="${base_height}"/>
       </geometry>
       <origin xyz="0 0 ${base_height / 2.0}" rpy="0 0 0"/>
-      <material name="dark_gray"/>
+      <material name="ur_black"/>
     </visual>
     <visual>
       <geometry>
-        <cylinder radius="${base_visual_cap_radius}" length="${base_visual_cap_height}"/>
+        <cylinder radius="${base_neck_radius}" length="${base_neck_height}"/>
       </geometry>
-      <origin xyz="0 0 ${base_height + (base_visual_cap_height / 2.0)}" rpy="0 0 0"/>
-      <material name="light_gray"/>
+      <origin xyz="0 0 ${base_height + (base_neck_height / 2.0)}" rpy="0 0 0"/>
+      <material name="ur_dark"/>
+    </visual>
+    <visual>
+      <geometry>
+        <cylinder radius="${accent_ring_radius_large}" length="${accent_ring_length}"/>
+      </geometry>
+      <origin xyz="0 0 ${shoulder_z - 0.010}" rpy="0 0 0"/>
+      <material name="ur_blue"/>
     </visual>
     <collision>
       <geometry>
-        <cylinder radius="${base_radius}" length="${base_height}"/>
+        <cylinder radius="${base_radius}" length="${shoulder_z}"/>
       </geometry>
-      <origin xyz="0 0 ${base_height / 2.0}" rpy="0 0 0"/>
+      <origin xyz="0 0 ${shoulder_z / 2.0}" rpy="0 0 0"/>
     </collision>
-    <xacro:cylinder_inertial mass="8.0" radius="${base_radius}" length="${base_height}" origin_z="${base_height / 2.0}"/>
+    <xacro:cylinder_inertial mass="4.0" radius="${base_radius}" length="${shoulder_z}" origin_z="${shoulder_z / 2.0}"/>
   </link>
 
   <link name="link_1">
     <visual>
       <geometry>
-        <box size="${shoulder_box_x} ${shoulder_box_y} ${shoulder_height}"/>
+        <cylinder radius="${shoulder_column_radius}" length="${shoulder_column_length}"/>
       </geometry>
-      <origin xyz="0 0 ${shoulder_height / 2.0}" rpy="0 0 0"/>
-      <material name="orange"/>
+      <origin xyz="0 0 ${-shoulder_column_length / 2.0}" rpy="0 0 0"/>
+      <material name="ur_dark"/>
     </visual>
     <visual>
       <geometry>
-        <cylinder radius="${shoulder_collar_radius}" length="${shoulder_collar_height}"/>
+        <cylinder radius="${shoulder_hub_radius}" length="${shoulder_hub_length}"/>
       </geometry>
-      <origin xyz="0 0 ${shoulder_collar_height / 2.0}" rpy="0 0 0"/>
-      <material name="orange"/>
+      <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
+      <material name="ur_dark"/>
     </visual>
     <visual>
       <geometry>
-        <box size="${shoulder_head_length} ${shoulder_head_width} ${shoulder_head_height}"/>
+        <cylinder radius="${accent_ring_radius_large}" length="${accent_ring_length}"/>
       </geometry>
-      <origin xyz="${shoulder_forward_offset / 2.0} 0 ${shoulder_height - (shoulder_head_height / 2.2)}" rpy="0 0 0"/>
-      <material name="dark_gray"/>
+      <origin xyz="0 ${shoulder_hub_length / 2.0 - 0.012} 0" rpy="1.57079632679 0 0"/>
+      <material name="ur_blue"/>
     </visual>
     <collision>
       <geometry>
-        <box size="${shoulder_box_x} ${shoulder_box_y} ${shoulder_height}"/>
+        <cylinder radius="${shoulder_hub_radius}" length="${shoulder_hub_length}"/>
       </geometry>
-      <origin xyz="0 0 ${shoulder_height / 2.0}" rpy="0 0 0"/>
+      <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
     </collision>
-    <xacro:box_inertial mass="6.0" x="${shoulder_box_x}" y="${shoulder_box_y}" z="${shoulder_height}" origin_z="${shoulder_height / 2.0}"/>
+    <xacro:cylinder_inertial mass="3.761" radius="${shoulder_hub_radius}" length="${shoulder_hub_length}" rpy="1.57079632679 0 0"/>
   </link>
 
   <link name="link_2">
     <visual>
       <geometry>
-        <box size="${upper_arm_length} ${arm_box_y} ${arm_box_z}"/>
+        <box size="${upper_arm_body_length} ${upper_arm_body_width} ${upper_arm_body_height}"/>
       </geometry>
-      <origin xyz="${upper_arm_length / 2.0} 0 0" rpy="0 0 0"/>
-      <material name="light_gray"/>
+      <origin xyz="${upper_arm_x / 2.0} 0 0" rpy="0 0 0"/>
+      <material name="ur_dark"/>
     </visual>
     <visual>
       <geometry>
-        <box size="${upper_arm_length * 0.72} ${arm_shell_width} ${arm_shell_height}"/>
+        <cylinder radius="${upper_arm_cap_radius}" length="${upper_arm_body_width + 0.018}"/>
       </geometry>
-      <origin xyz="${upper_arm_length * 0.5} 0 0" rpy="0 0 0"/>
-      <material name="orange"/>
+      <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
+      <material name="ur_dark"/>
     </visual>
     <visual>
       <geometry>
-        <cylinder radius="${arm_end_cap_radius}" length="${arm_end_cap_length}"/>
+        <cylinder radius="${upper_arm_cap_radius}" length="${upper_arm_body_width + 0.014}"/>
       </geometry>
-      <origin xyz="0 0 0" rpy="0 1.57079632679 0"/>
-      <material name="dark_gray"/>
+      <origin xyz="${upper_arm_x} 0 0" rpy="1.57079632679 0 0"/>
+      <material name="ur_dark"/>
     </visual>
     <visual>
       <geometry>
-        <cylinder radius="${arm_end_cap_radius}" length="${arm_end_cap_length}"/>
+        <cylinder radius="${accent_ring_radius_medium}" length="${accent_ring_length}"/>
       </geometry>
-      <origin xyz="${upper_arm_length} 0 0" rpy="0 1.57079632679 0"/>
-      <material name="dark_gray"/>
+      <origin xyz="${upper_arm_x + 0.022} 0 0" rpy="1.57079632679 0 0"/>
+      <material name="ur_blue"/>
     </visual>
     <collision>
       <geometry>
-        <box size="${upper_arm_length} ${arm_box_y} ${arm_box_z}"/>
+        <box size="${-upper_arm_x} 0.085 0.095"/>
       </geometry>
-      <origin xyz="${upper_arm_length / 2.0} 0 0" rpy="0 0 0"/>
+      <origin xyz="${upper_arm_x / 2.0} 0 0" rpy="0 0 0"/>
     </collision>
-    <xacro:box_inertial mass="4.2" x="${upper_arm_length}" y="${arm_box_y}" z="${arm_box_z}" origin_x="${upper_arm_length / 2.0}"/>
+    <xacro:box_inertial mass="8.058" x="${-upper_arm_x}" y="0.085" z="0.095" origin_x="${upper_arm_x / 2.0}"/>
   </link>
 
   <link name="link_3">
     <visual>
       <geometry>
-        <box size="${forearm_length} ${arm_box_y} ${arm_box_z}"/>
+        <box size="${forearm_body_length} ${forearm_body_width} ${forearm_body_height}"/>
       </geometry>
-      <origin xyz="${forearm_length / 2.0} 0 0" rpy="0 0 0"/>
-      <material name="orange"/>
+      <origin xyz="${forearm_x / 2.0} 0 ${forearm_z / 2.0}" rpy="0 ${forearm_visual_pitch} 0"/>
+      <material name="ur_dark"/>
     </visual>
     <visual>
       <geometry>
-        <box size="${forearm_length * 0.68} ${arm_shell_width * 0.92} ${arm_shell_height * 0.82}"/>
+        <cylinder radius="${forearm_cap_radius}" length="${forearm_body_width + 0.016}"/>
       </geometry>
-      <origin xyz="${forearm_length * 0.5} 0 0" rpy="0 0 0"/>
-      <material name="light_gray"/>
+      <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
+      <material name="ur_dark"/>
     </visual>
     <visual>
       <geometry>
-        <cylinder radius="${arm_end_cap_radius * 0.95}" length="${arm_end_cap_length * 0.9}"/>
+        <cylinder radius="${forearm_cap_radius}" length="${forearm_body_width + 0.012}"/>
       </geometry>
-      <origin xyz="0 0 0" rpy="0 1.57079632679 0"/>
-      <material name="light_gray"/>
+      <origin xyz="${forearm_x} 0 ${forearm_z}" rpy="1.57079632679 0 0"/>
+      <material name="ur_dark"/>
     </visual>
     <visual>
       <geometry>
-        <cylinder radius="${arm_end_cap_radius * 0.8}" length="${arm_end_cap_length * 0.75}"/>
+        <cylinder radius="${accent_ring_radius_medium * 0.92}" length="${accent_ring_length}"/>
       </geometry>
-      <origin xyz="${forearm_length} 0 0" rpy="0 1.57079632679 0"/>
-      <material name="light_gray"/>
+      <origin xyz="${forearm_x + 0.024} 0 ${forearm_z - 0.004}" rpy="1.57079632679 0 0"/>
+      <material name="ur_blue"/>
     </visual>
     <collision>
       <geometry>
-        <box size="${forearm_length} ${arm_box_y} ${arm_box_z}"/>
+        <box size="${forearm_visual_length} 0.078 0.088"/>
       </geometry>
-      <origin xyz="${forearm_length / 2.0} 0 0" rpy="0 0 0"/>
+      <origin xyz="${forearm_x / 2.0} 0 ${forearm_z / 2.0}" rpy="0 ${forearm_visual_pitch} 0"/>
     </collision>
-    <xacro:box_inertial mass="3.0" x="${forearm_length}" y="${arm_box_y}" z="${arm_box_z}" origin_x="${forearm_length / 2.0}"/>
+    <xacro:box_inertial mass="2.846" x="${forearm_visual_length}" y="0.078" z="0.088" origin_x="${forearm_x / 2.0}" origin_z="${forearm_z / 2.0}"/>
   </link>
 
   <link name="link_4">
     <visual>
       <geometry>
-        <box size="${wrist_box_size} ${wrist_box_size} ${wrist_1_length}"/>
+        <cylinder radius="${wrist_radius}" length="${wrist_1_length}"/>
       </geometry>
-      <origin xyz="0 0 ${wrist_1_length / 2.0}" rpy="0 0 0"/>
-      <material name="light_gray"/>
+      <origin xyz="0 ${wrist_1_y / 2.0} 0" rpy="1.57079632679 0 0"/>
+      <material name="ur_dark"/>
     </visual>
     <visual>
       <geometry>
-        <cylinder radius="${wrist_hub_radius}" length="${wrist_hub_length}"/>
+        <cylinder radius="${accent_ring_radius_small}" length="${accent_ring_length}"/>
       </geometry>
-      <origin xyz="0 0 ${wrist_1_length - (wrist_hub_length / 2.0)}" rpy="0 0 0"/>
-      <material name="dark_gray"/>
+      <origin xyz="0 ${wrist_1_y + 0.010} 0" rpy="1.57079632679 0 0"/>
+      <material name="ur_blue"/>
     </visual>
     <collision>
       <geometry>
-        <box size="${wrist_box_size} ${wrist_box_size} ${wrist_1_length}"/>
+        <cylinder radius="${wrist_radius}" length="${wrist_1_length}"/>
       </geometry>
-      <origin xyz="0 0 ${wrist_1_length / 2.0}" rpy="0 0 0"/>
+      <origin xyz="0 ${wrist_1_y / 2.0} 0" rpy="1.57079632679 0 0"/>
     </collision>
-    <xacro:box_inertial mass="1.0" x="${wrist_box_size}" y="${wrist_box_size}" z="${wrist_1_length}" origin_z="${wrist_1_length / 2.0}"/>
+    <xacro:cylinder_inertial mass="1.37" radius="${wrist_radius}" length="${wrist_1_length}" origin_y="${wrist_1_y / 2.0}" rpy="1.57079632679 0 0"/>
   </link>
 
   <link name="link_5">
     <visual>
       <geometry>
-        <box size="${wrist_2_length} ${wrist_box_size} ${wrist_box_size}"/>
+        <cylinder radius="${wrist_radius}" length="${wrist_2_length}"/>
       </geometry>
-      <origin xyz="${wrist_2_length / 2.0} 0 0" rpy="0 0 0"/>
-      <material name="orange"/>
+      <origin xyz="0 ${wrist_2_y / 2.0} 0" rpy="1.57079632679 0 0"/>
+      <material name="ur_dark"/>
     </visual>
     <visual>
       <geometry>
-        <cylinder radius="${wrist_hub_radius}" length="${wrist_hub_length}"/>
+        <cylinder radius="${accent_ring_radius_small}" length="${accent_ring_length}"/>
       </geometry>
-      <origin xyz="0 0 0" rpy="0 1.57079632679 0"/>
-      <material name="dark_gray"/>
+      <origin xyz="0 ${wrist_2_y - 0.010} 0" rpy="1.57079632679 0 0"/>
+      <material name="ur_blue"/>
     </visual>
     <collision>
       <geometry>
-        <box size="${wrist_2_length} ${wrist_box_size} ${wrist_box_size}"/>
+        <cylinder radius="${wrist_radius}" length="${wrist_2_length}"/>
       </geometry>
-      <origin xyz="${wrist_2_length / 2.0} 0 0" rpy="0 0 0"/>
+      <origin xyz="0 ${wrist_2_y / 2.0} 0" rpy="1.57079632679 0 0"/>
     </collision>
-    <xacro:box_inertial mass="0.8" x="${wrist_2_length}" y="${wrist_box_size}" z="${wrist_box_size}" origin_x="${wrist_2_length / 2.0}"/>
+    <xacro:cylinder_inertial mass="1.3" radius="${wrist_radius}" length="${wrist_2_length}" origin_y="${wrist_2_y / 2.0}" rpy="1.57079632679 0 0"/>
   </link>
 
   <link name="link_6">
     <visual>
       <geometry>
-        <box size="${wrist_box_size} ${wrist_box_size} ${wrist_3_length}"/>
+        <cylinder radius="${wrist_3_radius}" length="0.080"/>
       </geometry>
-      <origin xyz="0 0 ${wrist_3_length / 2.0}" rpy="0 0 0"/>
-      <material name="light_gray"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <material name="ur_dark"/>
     </visual>
     <visual>
       <geometry>
-        <cylinder radius="${wrist_hub_radius * 0.82}" length="${wrist_hub_length * 0.7}"/>
+        <cylinder radius="${accent_ring_radius_small * 0.92}" length="${accent_ring_length}"/>
       </geometry>
-      <origin xyz="0 0 ${wrist_3_length - (wrist_hub_length * 0.15)}" rpy="0 0 0"/>
-      <material name="orange"/>
+      <origin xyz="0 0 0.024" rpy="0 0 0"/>
+      <material name="ur_blue"/>
     </visual>
     <collision>
       <geometry>
-        <box size="${wrist_box_size} ${wrist_box_size} ${wrist_3_length}"/>
+        <cylinder radius="${wrist_3_radius}" length="0.080"/>
       </geometry>
-      <origin xyz="0 0 ${wrist_3_length / 2.0}" rpy="0 0 0"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
     </collision>
-    <xacro:box_inertial mass="0.6" x="${wrist_box_size}" y="${wrist_box_size}" z="${wrist_3_length}" origin_z="${wrist_3_length / 2.0}"/>
-  </link>
-
-  <link name="tool0">
-    <visual>
-      <geometry>
-        <cylinder radius="${tool_radius}" length="${tool_length}"/>
-      </geometry>
-      <origin xyz="0 0 ${tool_length / 2.0}" rpy="0 0 0"/>
-      <material name="silver"/>
-    </visual>
-    <visual>
-      <geometry>
-        <cylinder radius="${tool_guard_radius}" length="${tool_guard_height}"/>
-      </geometry>
-      <origin xyz="0 0 ${tool_guard_height / 2.0}" rpy="0 0 0"/>
-      <material name="dark_gray"/>
-    </visual>
-    <collision>
-      <geometry>
-        <cylinder radius="${tool_radius}" length="${tool_length}"/>
-      </geometry>
-      <origin xyz="0 0 ${tool_length / 2.0}" rpy="0 0 0"/>
-    </collision>
-    <xacro:cylinder_inertial mass="0.25" radius="${tool_radius}" length="${tool_length}" origin_z="${tool_length / 2.0}"/>
+    <xacro:cylinder_inertial mass="0.365" radius="${wrist_3_radius}" length="0.080"/>
   </link>
 
   <link name="flange">
@@ -337,14 +326,7 @@
         <cylinder radius="${flange_radius}" length="${flange_thickness}"/>
       </geometry>
       <origin xyz="0 0 ${flange_thickness / 2.0}" rpy="0 0 0"/>
-      <material name="dark_gray"/>
-    </visual>
-    <visual>
-      <geometry>
-        <cylinder radius="${flange_radius * 0.68}" length="${flange_thickness * 1.15}"/>
-      </geometry>
-      <origin xyz="0 0 ${flange_thickness * 0.58}" rpy="0 0 0"/>
-      <material name="silver"/>
+      <material name="ur_metal"/>
     </visual>
     <collision>
       <geometry>
@@ -352,19 +334,27 @@
       </geometry>
       <origin xyz="0 0 ${flange_thickness / 2.0}" rpy="0 0 0"/>
     </collision>
-    <xacro:cylinder_inertial mass="0.35" radius="${flange_radius}" length="${flange_thickness}" origin_z="${flange_thickness / 2.0}"/>
+    <xacro:cylinder_inertial mass="0.20" radius="${flange_radius}" length="${flange_thickness}" origin_z="${flange_thickness / 2.0}"/>
+  </link>
+
+  <link name="tool0">
+    <visual>
+      <geometry>
+        <cylinder radius="${tool_radius}" length="${tool_length}"/>
+      </geometry>
+      <origin xyz="0 0 ${tool_length / 2.0}" rpy="0 0 0"/>
+      <material name="ur_metal"/>
+    </visual>
+    <collision>
+      <geometry>
+        <cylinder radius="${tool_radius}" length="${tool_length}"/>
+      </geometry>
+      <origin xyz="0 0 ${tool_length / 2.0}" rpy="0 0 0"/>
+    </collision>
+    <xacro:cylinder_inertial mass="0.15" radius="${tool_radius}" length="${tool_length}" origin_z="${tool_length / 2.0}"/>
   </link>
 
   <link name="tcp"/>
-
-  <joint name="joint_1" type="revolute">
-    <parent link="base_link"/>
-    <child link="link_1"/>
-    <origin xyz="0 0 ${base_height}" rpy="0 0 0"/>
-    <axis xyz="0 0 1"/>
-    <limit lower="${joint_1_lower}" upper="${joint_1_upper}" effort="100.0" velocity="2.0"/>
-    <dynamics damping="${large_joint_damping}" friction="${large_joint_friction}"/>
-  </joint>
 
   <joint name="base_footprint_to_base_link" type="fixed">
     <parent link="base_footprint"/>
@@ -372,61 +362,70 @@
     <origin xyz="0 0 0" rpy="0 0 0"/>
   </joint>
 
+  <joint name="joint_1" type="revolute">
+    <parent link="base_link"/>
+    <child link="link_1"/>
+    <origin xyz="0 0 ${shoulder_z}" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="${joint_1_lower}" upper="${joint_1_upper}" effort="150.0" velocity="${joint_velocity_limit}"/>
+    <dynamics damping="${large_joint_damping}" friction="${large_joint_friction}"/>
+  </joint>
+
   <joint name="joint_2" type="revolute">
     <parent link="link_1"/>
     <child link="link_2"/>
-    <origin xyz="${shoulder_forward_offset} 0 ${shoulder_height}" rpy="0 0 0"/>
-    <axis xyz="0 1 0"/>
-    <limit lower="${joint_2_lower}" upper="${joint_2_upper}" effort="80.0" velocity="2.0"/>
+    <origin xyz="0 0 0" rpy="1.570796327 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="${joint_2_lower}" upper="${joint_2_upper}" effort="150.0" velocity="${joint_velocity_limit}"/>
     <dynamics damping="${large_joint_damping}" friction="${large_joint_friction}"/>
   </joint>
 
   <joint name="joint_3" type="revolute">
     <parent link="link_2"/>
     <child link="link_3"/>
-    <origin xyz="${upper_arm_length} 0 0" rpy="0 0 0"/>
-    <axis xyz="0 1 0"/>
-    <limit lower="${joint_3_lower}" upper="${joint_3_upper}" effort="60.0" velocity="2.0"/>
-    <dynamics damping="${medium_joint_damping}" friction="${medium_joint_friction}"/>
+    <origin xyz="${upper_arm_x} 0 0" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="${joint_3_lower}" upper="${joint_3_upper}" effort="150.0" velocity="${joint_velocity_limit}"/>
+    <dynamics damping="${large_joint_damping}" friction="${large_joint_friction}"/>
   </joint>
 
   <joint name="joint_4" type="revolute">
     <parent link="link_3"/>
     <child link="link_4"/>
-    <origin xyz="${forearm_length} 0 0" rpy="0 0 0"/>
-    <axis xyz="1 0 0"/>
-    <limit lower="${joint_4_lower}" upper="${joint_4_upper}" effort="30.0" velocity="3.0"/>
+    <origin xyz="${forearm_x} 0 ${forearm_z}" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="${joint_4_lower}" upper="${joint_4_upper}" effort="28.0" velocity="${joint_velocity_limit}"/>
     <dynamics damping="${wrist_joint_damping}" friction="${wrist_joint_friction}"/>
   </joint>
 
   <joint name="joint_5" type="revolute">
     <parent link="link_4"/>
     <child link="link_5"/>
-    <origin xyz="0 0 ${wrist_1_length}" rpy="0 0 0"/>
-    <axis xyz="0 1 0"/>
-    <limit lower="${joint_5_lower}" upper="${joint_5_upper}" effort="20.0" velocity="3.0"/>
+    <origin xyz="0 ${wrist_1_y} 0" rpy="1.570796327 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="${joint_5_lower}" upper="${joint_5_upper}" effort="28.0" velocity="${joint_velocity_limit}"/>
     <dynamics damping="${wrist_joint_damping}" friction="${wrist_joint_friction}"/>
   </joint>
 
   <joint name="joint_6" type="revolute">
     <parent link="link_5"/>
     <child link="link_6"/>
-    <origin xyz="${wrist_2_length} 0 0" rpy="0 0 0"/>
-    <axis xyz="1 0 0"/>
-    <limit lower="${joint_6_lower}" upper="${joint_6_upper}" effort="15.0" velocity="3.0"/>
+    <origin xyz="0 ${wrist_2_y} 0" rpy="1.57079632659 ${PI_CONST} ${PI_CONST}"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="${joint_6_lower}" upper="${joint_6_upper}" effort="28.0" velocity="${joint_velocity_limit}"/>
     <dynamics damping="${wrist_joint_damping}" friction="${wrist_joint_friction}"/>
   </joint>
 
   <joint name="link_6_to_flange" type="fixed">
     <parent link="link_6"/>
     <child link="flange"/>
-    <origin xyz="0 0 ${wrist_3_length}" rpy="0 0 0"/>
+    <origin xyz="0 0 0" rpy="0 ${-PI_CONST / 2.0} ${-PI_CONST / 2.0}"/>
   </joint>
 
   <joint name="tool0_fixed_joint" type="fixed">
     <parent link="flange"/>
     <child link="tool0"/>
-    <origin xyz="0 0 ${flange_thickness}" rpy="0 0 0"/>
+    <origin xyz="0 0 ${flange_thickness}" rpy="${PI_CONST / 2.0} 0 ${PI_CONST / 2.0}"/>
   </joint>
 
   <joint name="tool0_to_tcp" type="fixed">
