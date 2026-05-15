@@ -1,0 +1,76 @@
+metadata:
+  robot_name: ur7e
+  step_file: UR5eUR7e.step/UR7e.step
+  units: mm
+  step_to_ros_rpy: [-1.5707963267948966, 0.0, 0.0]
+  reference_pose:
+    joint_1: 0.0
+    joint_2: -1.5707963267948966
+    joint_3: 0.0
+    joint_4: -1.5707963267948966
+    joint_5: 0.0
+    joint_6: 0.0
+links:
+  - link_name: base_link
+    component_index: 1
+    source_step_name: C-1000257
+    raw_mesh_path: raw/component_01.stl
+    local_mesh_path: local/base_link.stl
+    joint_frame_xyz: [0.0, 0.0, 0.0]
+    joint_frame_rpy: [0.0, 0.0, 0.0]
+    status: locked
+    notes: Base pedestal visual from STEP assembly.
+  - link_name: link_1
+    component_index: 2
+    source_step_name: C-1000248
+    raw_mesh_path: raw/component_02.stl
+    local_mesh_path: local/link_1.stl
+    joint_frame_xyz: [0.0, 0.0, 0.1625]
+    joint_frame_rpy: [0.0, 0.0, 0.0]
+    status: locked
+    notes: Shoulder housing visual.
+  - link_name: link_2
+    component_index: 3
+    source_step_name: C-1000249
+    raw_mesh_path: raw/component_03.stl
+    local_mesh_path: local/link_2.stl
+    joint_frame_xyz: [0.0, 0.0, 0.0]
+    joint_frame_rpy: [1.5707963267948966, 0.0, 0.0]
+    status: locked
+    notes: Upper-arm casting visual.
+  - link_name: link_3
+    component_index: 4
+    source_step_name: C-1000250
+    raw_mesh_path: raw/component_04.stl
+    local_mesh_path: local/link_3.stl
+    joint_frame_xyz: [-0.425, 0.0, 0.0]
+    joint_frame_rpy: [0.0, 0.0, 0.0]
+    status: locked
+    notes: Forearm casting visual.
+  - link_name: link_4
+    component_index: 5
+    source_step_name: C-1000251
+    raw_mesh_path: raw/component_05.stl
+    local_mesh_path: local/link_4.stl
+    joint_frame_xyz: [-0.3922, 0.0, 0.1333]
+    joint_frame_rpy: [0.0, 0.0, 0.0]
+    status: locked
+    notes: Wrist-1 visual.
+  - link_name: link_5
+    component_index: 7
+    source_step_name: C-2007861
+    raw_mesh_path: raw/component_07.stl
+    local_mesh_path: local/link_5.stl
+    joint_frame_xyz: [0.0, -0.0997, 0.0]
+    joint_frame_rpy: [1.5707963267948966, 0.0, 0.0]
+    status: locked
+    notes: Wrist-2 visual.
+  - link_name: link_6
+    component_index: 6
+    source_step_name: C-2007038
+    raw_mesh_path: raw/component_06.stl
+    local_mesh_path: local/link_6.stl
+    joint_frame_xyz: [0.0, 0.0996, 0.0]
+    joint_frame_rpy: [1.5707963267948966, 3.141592653589793, 3.141592653589793]
+    status: locked
+    notes: Wrist-3 visual.

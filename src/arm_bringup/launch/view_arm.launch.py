@@ -16,6 +16,8 @@ def generate_launch_description():
     auto_home = LaunchConfiguration("auto_home")
     ros2_control_plugin = LaunchConfiguration("ros2_control_plugin")
     ros2_control_system_name = LaunchConfiguration("ros2_control_system_name")
+    visual_mode = LaunchConfiguration("visual_mode")
+    collision_mode = LaunchConfiguration("collision_mode")
 
     xacro_file = PathJoinSubstitution(
         [FindPackageShare("arm_description"), "urdf", "arm.urdf.xacro"]
@@ -45,6 +47,12 @@ def generate_launch_description():
                 " ",
                 "ros2_control_system_name:=",
                 ros2_control_system_name,
+                " ",
+                "visual_mode:=",
+                visual_mode,
+                " ",
+                "collision_mode:=",
+                collision_mode,
             ]
         )
     }
@@ -109,6 +117,7 @@ def generate_launch_description():
         condition=IfCondition(use_rviz),
         output="screen",
     )
+    delayed_rviz_node = TimerAction(period=2.0, actions=[rviz_node])
 
     return LaunchDescription(
         [
@@ -132,11 +141,21 @@ def generate_launch_description():
                 default_value="ArmFakeSystem",
                 description="System name used in the robot description ros2_control block.",
             ),
+            DeclareLaunchArgument(
+                "visual_mode",
+                default_value="cad",
+                description="Robot visual mode passed to xacro (cad or primitive).",
+            ),
+            DeclareLaunchArgument(
+                "collision_mode",
+                default_value="simple",
+                description="Collision mode passed to xacro.",
+            ),
             robot_state_publisher_node,
             ros2_control_node,
             joint_state_broadcaster_spawner,
             arm_controller_spawner,
             auto_home_after_arm_controller,
-            rviz_node,
+            delayed_rviz_node,
         ]
     )

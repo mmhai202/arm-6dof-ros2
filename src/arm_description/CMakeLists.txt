@@ -7,4 +7,9 @@ install(DIRECTORY urdf meshes
   DESTINATION share/${PROJECT_NAME}
 )
 
+install(PROGRAMS
+  scripts/prepare_ur7e.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 ament_package()

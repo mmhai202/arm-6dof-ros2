@@ -4,8 +4,13 @@
   <xacro:arg name="ros2_control_system_name" default="ArmFakeSystem"/>
   <xacro:arg name="use_gazebo" default="false"/>
   <xacro:arg name="gazebo_controller_config" default=""/>
+  <xacro:arg name="visual_mode" default="cad"/>
+  <xacro:arg name="collision_mode" default="simple"/>
 
   <xacro:property name="PI_CONST" value="3.1415926535897931"/>
+  <xacro:property name="visual_mode" value="$(arg visual_mode)"/>
+  <xacro:property name="collision_mode" value="$(arg collision_mode)"/>
+  <xacro:property name="use_cad_visuals" value="${visual_mode == 'cad'}"/>
 
   <!-- UR7e kinematic dimensions from Universal Robots ur_description -->
   <xacro:property name="shoulder_z" value="0.1625"/>
@@ -15,7 +20,7 @@
   <xacro:property name="wrist_1_y" value="-0.0997"/>
   <xacro:property name="wrist_2_y" value="0.0996"/>
 
-  <!-- Approximate visual dimensions tuned to the UR7e silhouette -->
+  <!-- Simplified collision / fallback visual dimensions -->
   <xacro:property name="base_radius" value="0.105"/>
   <xacro:property name="base_height" value="0.128"/>
   <xacro:property name="base_neck_radius" value="0.062"/>
@@ -33,7 +38,7 @@
   <xacro:property name="forearm_body_height" value="0.094"/>
   <xacro:property name="forearm_cap_radius" value="0.048"/>
   <xacro:property name="forearm_visual_length" value="0.4142339073518729"/>
-  <xacro:property name="forearm_visual_pitch" value="2.813963855577728"/>
+  <xacro:property name="forearm_visual_pitch" value="-2.813963855577728"/>
   <xacro:property name="wrist_radius" value="0.040"/>
   <xacro:property name="wrist_1_length" value="0.0997"/>
   <xacro:property name="wrist_2_length" value="0.0996"/>
@@ -66,6 +71,9 @@
   <xacro:property name="wrist_joint_damping" value="0.08"/>
   <xacro:property name="wrist_joint_friction" value="0.02"/>
 
+  <xacro:property name="cad_mesh_root" value="package://arm_description/meshes/ur7e/local"/>
+  <xacro:property name="cad_mesh_scale" value="1 1 1"/>
+
   <xacro:macro name="box_inertial" params="mass x y z origin_x:=0.0 origin_y:=0.0 origin_z:=0.0">
     <inertial>
       <mass value="${mass}"/>
@@ -92,6 +100,16 @@
     </inertial>
   </xacro:macro>
 
+  <xacro:macro name="mesh_visual" params="mesh_name material_name origin_xyz:='0 0 0' origin_rpy:='0 0 0' scale:=${cad_mesh_scale}">
+    <visual>
+      <origin xyz="${origin_xyz}" rpy="${origin_rpy}"/>
+      <geometry>
+        <mesh filename="${cad_mesh_root}/${mesh_name}" scale="${scale}"/>
+      </geometry>
+      <material name="${material_name}"/>
+    </visual>
+  </xacro:macro>
+
   <material name="ur_dark">
     <color rgba="0.12 0.13 0.15 1.0"/>
   </material>
@@ -111,27 +129,25 @@
   <link name="base_footprint"/>
 
   <link name="base_link">
-    <visual>
-      <geometry>
-        <cylinder radius="${base_radius}" length="${base_height}"/>
-      </geometry>
-      <origin xyz="0 0 ${base_height / 2.0}" rpy="0 0 0"/>
-      <material name="ur_black"/>
-    </visual>
-    <visual>
-      <geometry>
-        <cylinder radius="${base_neck_radius}" length="${base_neck_height}"/>
-      </geometry>
-      <origin xyz="0 0 ${base_height + (base_neck_height / 2.0)}" rpy="0 0 0"/>
-      <material name="ur_dark"/>
-    </visual>
-    <visual>
-      <geometry>
-        <cylinder radius="${accent_ring_radius_large}" length="${accent_ring_length}"/>
-      </geometry>
-      <origin xyz="0 0 ${shoulder_z - 0.010}" rpy="0 0 0"/>
-      <material name="ur_blue"/>
-    </visual>
+    <xacro:if value="${use_cad_visuals}">
+      <xacro:mesh_visual mesh_name="base_link.stl" material_name="ur_black"/>
+    </xacro:if>
+    <xacro:unless value="${use_cad_visuals}">
+      <visual>
+        <geometry>
+          <cylinder radius="${base_radius}" length="${base_height}"/>
+        </geometry>
+        <origin xyz="0 0 ${base_height / 2.0}" rpy="0 0 0"/>
+        <material name="ur_black"/>
+      </visual>
+      <visual>
+        <geometry>
+          <cylinder radius="${base_neck_radius}" length="${base_neck_height}"/>
+        </geometry>
+        <origin xyz="0 0 ${base_height + (base_neck_height / 2.0)}" rpy="0 0 0"/>
+        <material name="ur_dark"/>
+      </visual>
+    </xacro:unless>
     <collision>
       <geometry>
         <cylinder radius="${base_radius}" length="${shoulder_z}"/>
@@ -142,27 +158,25 @@
   </link>
 
   <link name="link_1">
-    <visual>
-      <geometry>
-        <cylinder radius="${shoulder_column_radius}" length="${shoulder_column_length}"/>
-      </geometry>
-      <origin xyz="0 0 ${-shoulder_column_length / 2.0}" rpy="0 0 0"/>
-      <material name="ur_dark"/>
-    </visual>
-    <visual>
-      <geometry>
-        <cylinder radius="${shoulder_hub_radius}" length="${shoulder_hub_length}"/>
-      </geometry>
-      <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
-      <material name="ur_dark"/>
-    </visual>
-    <visual>
-      <geometry>
-        <cylinder radius="${accent_ring_radius_large}" length="${accent_ring_length}"/>
-      </geometry>
-      <origin xyz="0 ${shoulder_hub_length / 2.0 - 0.012} 0" rpy="1.57079632679 0 0"/>
-      <material name="ur_blue"/>
-    </visual>
+    <xacro:if value="${use_cad_visuals}">
+      <xacro:mesh_visual mesh_name="link_1.stl" material_name="ur_dark"/>
+    </xacro:if>
+    <xacro:unless value="${use_cad_visuals}">
+      <visual>
+        <geometry>
+          <cylinder radius="${shoulder_column_radius}" length="${shoulder_column_length}"/>
+        </geometry>
+        <origin xyz="0 0 ${-shoulder_column_length / 2.0}" rpy="0 0 0"/>
+        <material name="ur_dark"/>
+      </visual>
+      <visual>
+        <geometry>
+          <cylinder radius="${shoulder_hub_radius}" length="${shoulder_hub_length}"/>
+        </geometry>
+        <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
+        <material name="ur_dark"/>
+      </visual>
+    </xacro:unless>
     <collision>
       <geometry>
         <cylinder radius="${shoulder_hub_radius}" length="${shoulder_hub_length}"/>
@@ -173,34 +187,32 @@
   </link>
 
   <link name="link_2">
-    <visual>
-      <geometry>
-        <box size="${upper_arm_body_length} ${upper_arm_body_width} ${upper_arm_body_height}"/>
-      </geometry>
-      <origin xyz="${upper_arm_x / 2.0} 0 0" rpy="0 0 0"/>
-      <material name="ur_dark"/>
-    </visual>
-    <visual>
-      <geometry>
-        <cylinder radius="${upper_arm_cap_radius}" length="${upper_arm_body_width + 0.018}"/>
-      </geometry>
-      <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
-      <material name="ur_dark"/>
-    </visual>
-    <visual>
-      <geometry>
-        <cylinder radius="${upper_arm_cap_radius}" length="${upper_arm_body_width + 0.014}"/>
-      </geometry>
-      <origin xyz="${upper_arm_x} 0 0" rpy="1.57079632679 0 0"/>
-      <material name="ur_dark"/>
-    </visual>
-    <visual>
-      <geometry>
-        <cylinder radius="${accent_ring_radius_medium}" length="${accent_ring_length}"/>
-      </geometry>
-      <origin xyz="${upper_arm_x + 0.022} 0 0" rpy="1.57079632679 0 0"/>
-      <material name="ur_blue"/>
-    </visual>
+    <xacro:if value="${use_cad_visuals}">
+      <xacro:mesh_visual mesh_name="link_2.stl" material_name="ur_dark"/>
+    </xacro:if>
+    <xacro:unless value="${use_cad_visuals}">
+      <visual>
+        <geometry>
+          <box size="${upper_arm_body_length} ${upper_arm_body_width} ${upper_arm_body_height}"/>
+        </geometry>
+        <origin xyz="${upper_arm_x / 2.0} 0 0" rpy="0 0 0"/>
+        <material name="ur_dark"/>
+      </visual>
+      <visual>
+        <geometry>
+          <cylinder radius="${upper_arm_cap_radius}" length="${upper_arm_body_width + 0.018}"/>
+        </geometry>
+        <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
+        <material name="ur_dark"/>
+      </visual>
+      <visual>
+        <geometry>
+          <cylinder radius="${upper_arm_cap_radius}" length="${upper_arm_body_width + 0.014}"/>
+        </geometry>
+        <origin xyz="${upper_arm_x} 0 0" rpy="1.57079632679 0 0"/>
+        <material name="ur_dark"/>
+      </visual>
+    </xacro:unless>
     <collision>
       <geometry>
         <box size="${-upper_arm_x} 0.085 0.095"/>
@@ -211,34 +223,32 @@
   </link>
 
   <link name="link_3">
-    <visual>
-      <geometry>
-        <box size="${forearm_body_length} ${forearm_body_width} ${forearm_body_height}"/>
-      </geometry>
-      <origin xyz="${forearm_x / 2.0} 0 ${forearm_z / 2.0}" rpy="0 ${forearm_visual_pitch} 0"/>
-      <material name="ur_dark"/>
-    </visual>
-    <visual>
-      <geometry>
-        <cylinder radius="${forearm_cap_radius}" length="${forearm_body_width + 0.016}"/>
-      </geometry>
-      <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
-      <material name="ur_dark"/>
-    </visual>
-    <visual>
-      <geometry>
-        <cylinder radius="${forearm_cap_radius}" length="${forearm_body_width + 0.012}"/>
-      </geometry>
-      <origin xyz="${forearm_x} 0 ${forearm_z}" rpy="1.57079632679 0 0"/>
-      <material name="ur_dark"/>
-    </visual>
-    <visual>
-      <geometry>
-        <cylinder radius="${accent_ring_radius_medium * 0.92}" length="${accent_ring_length}"/>
-      </geometry>
-      <origin xyz="${forearm_x + 0.024} 0 ${forearm_z - 0.004}" rpy="1.57079632679 0 0"/>
-      <material name="ur_blue"/>
-    </visual>
+    <xacro:if value="${use_cad_visuals}">
+      <xacro:mesh_visual mesh_name="link_3.stl" material_name="ur_dark"/>
+    </xacro:if>
+    <xacro:unless value="${use_cad_visuals}">
+      <visual>
+        <geometry>
+          <box size="${forearm_body_length} ${forearm_body_width} ${forearm_body_height}"/>
+        </geometry>
+        <origin xyz="${forearm_x / 2.0} 0 ${forearm_z / 2.0}" rpy="0 ${forearm_visual_pitch} 0"/>
+        <material name="ur_dark"/>
+      </visual>
+      <visual>
+        <geometry>
+          <cylinder radius="${forearm_cap_radius}" length="${forearm_body_width + 0.016}"/>
+        </geometry>
+        <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
+        <material name="ur_dark"/>
+      </visual>
+      <visual>
+        <geometry>
+          <cylinder radius="${forearm_cap_radius}" length="${forearm_body_width + 0.012}"/>
+        </geometry>
+        <origin xyz="${forearm_x} 0 ${forearm_z}" rpy="1.57079632679 0 0"/>
+        <material name="ur_dark"/>
+      </visual>
+    </xacro:unless>
     <collision>
       <geometry>
         <box size="${forearm_visual_length} 0.078 0.088"/>
@@ -249,20 +259,25 @@
   </link>
 
   <link name="link_4">
-    <visual>
-      <geometry>
-        <cylinder radius="${wrist_radius}" length="${wrist_1_length}"/>
-      </geometry>
-      <origin xyz="0 ${wrist_1_y / 2.0} 0" rpy="1.57079632679 0 0"/>
-      <material name="ur_dark"/>
-    </visual>
-    <visual>
-      <geometry>
-        <cylinder radius="${accent_ring_radius_small}" length="${accent_ring_length}"/>
-      </geometry>
-      <origin xyz="0 ${wrist_1_y + 0.010} 0" rpy="1.57079632679 0 0"/>
-      <material name="ur_blue"/>
-    </visual>
+    <xacro:if value="${use_cad_visuals}">
+      <xacro:mesh_visual mesh_name="link_4.stl" material_name="ur_dark"/>
+    </xacro:if>
+    <xacro:unless value="${use_cad_visuals}">
+      <visual>
+        <geometry>
+          <sphere radius="${wrist_radius + 0.010}"/>
+        </geometry>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <material name="ur_dark"/>
+      </visual>
+      <visual>
+        <geometry>
+          <cylinder radius="${wrist_radius}" length="${wrist_1_length + 0.016}"/>
+        </geometry>
+        <origin xyz="0 ${wrist_1_y / 2.0} 0" rpy="1.57079632679 0 0"/>
+        <material name="ur_dark"/>
+      </visual>
+    </xacro:unless>
     <collision>
       <geometry>
         <cylinder radius="${wrist_radius}" length="${wrist_1_length}"/>
@@ -273,20 +288,25 @@
   </link>
 
   <link name="link_5">
-    <visual>
-      <geometry>
-        <cylinder radius="${wrist_radius}" length="${wrist_2_length}"/>
-      </geometry>
-      <origin xyz="0 ${wrist_2_y / 2.0} 0" rpy="1.57079632679 0 0"/>
-      <material name="ur_dark"/>
-    </visual>
-    <visual>
-      <geometry>
-        <cylinder radius="${accent_ring_radius_small}" length="${accent_ring_length}"/>
-      </geometry>
-      <origin xyz="0 ${wrist_2_y - 0.010} 0" rpy="1.57079632679 0 0"/>
-      <material name="ur_blue"/>
-    </visual>
+    <xacro:if value="${use_cad_visuals}">
+      <xacro:mesh_visual mesh_name="link_5.stl" material_name="ur_dark"/>
+    </xacro:if>
+    <xacro:unless value="${use_cad_visuals}">
+      <visual>
+        <geometry>
+          <sphere radius="${wrist_radius + 0.008}"/>
+        </geometry>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <material name="ur_dark"/>
+      </visual>
+      <visual>
+        <geometry>
+          <cylinder radius="${wrist_radius}" length="${wrist_2_length + 0.016}"/>
+        </geometry>
+        <origin xyz="0 ${wrist_2_y / 2.0} 0" rpy="1.57079632679 0 0"/>
+        <material name="ur_dark"/>
+      </visual>
+    </xacro:unless>
     <collision>
       <geometry>
         <cylinder radius="${wrist_radius}" length="${wrist_2_length}"/>
@@ -297,20 +317,25 @@
   </link>
 
   <link name="link_6">
-    <visual>
-      <geometry>
-        <cylinder radius="${wrist_3_radius}" length="0.080"/>
-      </geometry>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <material name="ur_dark"/>
-    </visual>
-    <visual>
-      <geometry>
-        <cylinder radius="${accent_ring_radius_small * 0.92}" length="${accent_ring_length}"/>
-      </geometry>
-      <origin xyz="0 0 0.024" rpy="0 0 0"/>
-      <material name="ur_blue"/>
-    </visual>
+    <xacro:if value="${use_cad_visuals}">
+      <xacro:mesh_visual mesh_name="link_6.stl" material_name="ur_dark"/>
+    </xacro:if>
+    <xacro:unless value="${use_cad_visuals}">
+      <visual>
+        <geometry>
+          <sphere radius="${wrist_3_radius + 0.008}"/>
+        </geometry>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <material name="ur_dark"/>
+      </visual>
+      <visual>
+        <geometry>
+          <cylinder radius="${wrist_3_radius}" length="0.072"/>
+        </geometry>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <material name="ur_dark"/>
+      </visual>
+    </xacro:unless>
     <collision>
       <geometry>
         <cylinder radius="${wrist_3_radius}" length="0.080"/>
@@ -321,13 +346,15 @@
   </link>
 
   <link name="flange">
-    <visual>
-      <geometry>
-        <cylinder radius="${flange_radius}" length="${flange_thickness}"/>
-      </geometry>
-      <origin xyz="0 0 ${flange_thickness / 2.0}" rpy="0 0 0"/>
-      <material name="ur_metal"/>
-    </visual>
+    <xacro:unless value="${use_cad_visuals}">
+      <visual>
+        <geometry>
+          <cylinder radius="${flange_radius + 0.004}" length="${flange_thickness + 0.010}"/>
+        </geometry>
+        <origin xyz="0 0 ${(flange_thickness + 0.010) / 2.0}" rpy="0 0 0"/>
+        <material name="ur_metal"/>
+      </visual>
+    </xacro:unless>
     <collision>
       <geometry>
         <cylinder radius="${flange_radius}" length="${flange_thickness}"/>
@@ -338,19 +365,6 @@
   </link>
 
   <link name="tool0">
-    <visual>
-      <geometry>
-        <cylinder radius="${tool_radius}" length="${tool_length}"/>
-      </geometry>
-      <origin xyz="0 0 ${tool_length / 2.0}" rpy="0 0 0"/>
-      <material name="ur_metal"/>
-    </visual>
-    <collision>
-      <geometry>
-        <cylinder radius="${tool_radius}" length="${tool_length}"/>
-      </geometry>
-      <origin xyz="0 0 ${tool_length / 2.0}" rpy="0 0 0"/>
-    </collision>
     <xacro:cylinder_inertial mass="0.15" radius="${tool_radius}" length="${tool_length}" origin_z="${tool_length / 2.0}"/>
   </link>
 

@@ -1,0 +1,280 @@
+step_file: UR7e.step/UR7e.step
+manifest: src/arm_description/meshes/ur7e/ur7e_manifest.yaml
+reference_pose:
+  joint_1: 0.0
+  joint_2: -1.5707963267948966
+  joint_3: 0.0
+  joint_4: -1.5707963267948966
+  joint_5: 0.0
+  joint_6: 0.0
+step_to_ros_rpy:
+- -1.5707963267948966
+- 0.0
+- 0.0
+links:
+- link_name: base_link
+  component_index: 1
+  source_step_name: C-1000257
+  raw_mesh_path: src/arm_description/meshes/ur7e/raw/component_01.stl
+  local_mesh_path: src/arm_description/meshes/ur7e/local/base_link.stl
+  reference_origin_step_mm:
+  - 0.0
+  - 0.0
+  - 0.0
+  reference_origin_near_bbox: true
+  raw_bbox_step_mm:
+    min:
+    - -75.49468231201172
+    - -4.949999809265137
+    - -345.6954650878906
+    max:
+    - 75.49468231201172
+    - 99.0999984741211
+    - 75.5
+    centroid:
+    - 0.06355650139733256
+    - 26.07537525466067
+    - -152.03309365374443
+  local_bbox_ros_m:
+    min:
+    - -0.07549468231201172
+    - -0.0755
+    - -0.004949999809265137
+    max:
+    - 0.07549468231201172
+    - 0.3456954650878906
+    - 0.0990999984741211
+    centroid:
+    - 6.355650139733092e-05
+    - 0.15203309365375198
+    - 0.02607537525466142
+  triangle_count: 61444
+  vertex_count: 184332
+- link_name: link_1
+  component_index: 2
+  source_step_name: C-1000248
+  raw_mesh_path: src/arm_description/meshes/ur7e/raw/component_02.stl
+  local_mesh_path: src/arm_description/meshes/ur7e/local/link_1.stl
+  reference_origin_step_mm:
+  - 0.0
+  - 162.5
+  - 0.0
+  reference_origin_near_bbox: true
+  raw_bbox_step_mm:
+    min:
+    - -59.982025146484375
+    - 99.0999984741211
+    - -60.099998474121094
+    max:
+    - 60.099674224853516
+    - 234.5417022705078
+    - 74.4000015258789
+    centroid:
+    - -0.04591998760780508
+    - 195.38702584353527
+    - 20.04694120824637
+  local_bbox_ros_m:
+    min:
+    - -0.059982025146484375
+    - -0.0744000015258789
+    - -0.06340000152587891
+    max:
+    - 0.060099674224853517
+    - 0.06009999847412109
+    - 0.0720417022705078
+    centroid:
+    - -4.5919987607829256e-05
+    - -0.02004694120824554
+    - 0.03288702584353675
+  triangle_count: 19308
+  vertex_count: 57924
+- link_name: link_2
+  component_index: 3
+  source_step_name: C-1000249
+  raw_mesh_path: src/arm_description/meshes/ur7e/raw/component_03.stl
+  local_mesh_path: src/arm_description/meshes/ur7e/local/link_2.stl
+  reference_origin_step_mm:
+  - 0.0
+  - 162.5
+  - 0.0
+  reference_origin_near_bbox: false
+  raw_bbox_step_mm:
+    min:
+    - -60.099674224853516
+    - 102.4000015258789
+    - 74.4000015258789
+    max:
+    - 60.099674224853516
+    - 647.5999755859375
+    - 209.84170532226562
+    centroid:
+    - -0.011413202342202625
+    - 372.2738747532829
+    - 170.0790513088251
+  local_bbox_ros_m:
+    min:
+    - -0.48509997558593754
+    - -0.060099674224853517
+    - 0.07440000152587889
+    max:
+    - 0.06009999847412112
+    - 0.060099674224853544
+    - 0.20984170532226565
+    centroid:
+    - -0.20977387475328524
+    - -1.1413202342185668e-05
+    - 0.17007905130882453
+  triangle_count: 39269
+  vertex_count: 117807
+- link_name: link_3
+  component_index: 4
+  source_step_name: C-1000250
+  raw_mesh_path: src/arm_description/meshes/ur7e/raw/component_04.stl
+  local_mesh_path: src/arm_description/meshes/ur7e/local/link_3.stl
+  reference_origin_step_mm:
+  - -2.6023744481881254e-14
+  - 587.5
+  - -2.6023744481881254e-14
+  reference_origin_near_bbox: true
+  raw_bbox_step_mm:
+    min:
+    - -58.00006103515625
+    - 529.5
+    - -50.73844528198242
+    max:
+    - 58.00006103515625
+    - 1019.04736328125
+    - 74.4000015258789
+    centroid:
+    - -0.5163976513403905
+    - 858.7150786018689
+    - -6.059344886436454
+  local_bbox_ros_m:
+    min:
+    - -0.43154736328125
+    - -0.058000061035156224
+    - -0.050738445281982375
+    max:
+    - 0.05800000000000005
+    - 0.05800006103515628
+    - 0.07440000152587893
+    centroid:
+    - -0.2712150786018613
+    - -0.0005163976513403218
+    - -0.006059344886435826
+  triangle_count: 18854
+  vertex_count: 56562
+- link_name: link_4
+  component_index: 5
+  source_step_name: C-1000251
+  raw_mesh_path: src/arm_description/meshes/ur7e/raw/component_05.stl
+  local_mesh_path: src/arm_description/meshes/ur7e/local/link_4.stl
+  reference_origin_step_mm:
+  - -5.003906821316085e-14
+  - 979.7
+  - 133.29999999999995
+  reference_origin_near_bbox: true
+  raw_bbox_step_mm:
+    min:
+    - -39.349998474121094
+    - 923.6699829101562
+    - 52.900001525878906
+    max:
+    - 39.349998474121094
+    - 1026.0
+    - 172.64735412597656
+    centroid:
+    - 0.5147333783361288
+    - 959.8760440919345
+    - 116.40460036538701
+  local_bbox_ros_m:
+    min:
+    - -0.03934999847412114
+    - -0.04630000000000001
+    - -0.08039999847412105
+    max:
+    - 0.039349998474121045
+    - 0.05603001708984379
+    - 0.03934735412597662
+    centroid:
+    - -0.0005147333783362017
+    - 0.01982395590806373
+    - -0.01689539963461287
+  triangle_count: 19868
+  vertex_count: 59604
+- link_name: link_5
+  component_index: 7
+  source_step_name: C-2007861
+  raw_mesh_path: src/arm_description/meshes/ur7e/raw/component_07.stl
+  local_mesh_path: src/arm_description/meshes/ur7e/local/link_5.stl
+  reference_origin_step_mm:
+  - -6.224879680065996e-14
+  - 1079.3999999999999
+  - 133.29999999999995
+  reference_origin_near_bbox: true
+  raw_bbox_step_mm:
+    min:
+    - -39.349998474121094
+    - 1026.0
+    - 75.96160125732422
+    max:
+    - 39.349998474121094
+    - 1118.747314453125
+    - 179.0
+    centroid:
+    - -0.8488930482757282
+    - 1063.679195482006
+    - 101.56793498781602
+  local_bbox_ros_m:
+    min:
+    - -0.039349998474121156
+    - -0.057338398742675725
+    - -0.05339999999999989
+    max:
+    - 0.03934999847412103
+    - 0.045700000000000046
+    - 0.039347314453125115
+    centroid:
+    - 0.0008488930482756625
+    - -0.03173206501218354
+    - -0.01572080451799411
+  triangle_count: 12185
+  vertex_count: 36555
+- link_name: link_6
+  component_index: 6
+  source_step_name: C-2007038
+  raw_mesh_path: src/arm_description/meshes/ur7e/raw/component_06.stl
+  local_mesh_path: src/arm_description/meshes/ur7e/local/link_6.stl
+  reference_origin_step_mm:
+  - -6.224879680065996e-14
+  - 1079.3999999999999
+  - 232.89999999999995
+  reference_origin_near_bbox: true
+  raw_bbox_step_mm:
+    min:
+    - -37.49985122680664
+    - 1041.9000244140625
+    - 179.0
+    max:
+    - 37.49985122680664
+    - 1119.7774658203125
+    - 232.89999389648438
+    centroid:
+    - -0.020071291165988808
+    - 1097.7038463671574
+    - 200.99527242342876
+  local_bbox_ros_m:
+    min:
+    - -0.0374998512268067
+    - -0.04037746582031265
+    - -0.053899999999999976
+    max:
+    - 0.03749985122680659
+    - 0.03749997558593732
+    - -6.103515554078953e-09
+    centroid:
+    - 2.0071291165934213e-05
+    - -0.018303846367157102
+    - -0.03190472757656943
+  triangle_count: 10424
+  vertex_count: 31272

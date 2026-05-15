@@ -9,7 +9,7 @@ The project provides robot description, bringup, controller validation, and an o
 The workspace is split into six packages with clear ownership:
 
 * `arm_description`
-  source of truth for the robot model, frame tree, joint limits, and `ros2_control` definition
+  source of truth for the robot model, CAD-derived UR7e visuals, frame tree, joint limits, and `ros2_control` definition
 
 * `arm_bringup`
   launch files for RViz, controller bringup, and Gazebo experiments
@@ -74,6 +74,25 @@ Headless mode:
 ```bash
 ./scripts/run_moveit_demo.sh --headless
 ```
+
+### UR7e CAD Visual Pipeline
+
+Regenerate the normalized UR7e visual meshes from `UR5eUR7e.step/UR7e.step`:
+
+```bash
+python3 src/arm_description/scripts/prepare_ur7e.py --force-export
+```
+
+Current CAD artifacts live under `src/arm_description/meshes/ur7e/`:
+
+* `local/`
+  link-local meshes used directly by RViz / MoveIt
+
+* `raw/`
+  direct STEP component exports kept for inspection and regeneration
+
+* `ur7e_manifest.yaml`
+  component-to-link mapping and normalization metadata
 
 Key top-level scripts:
 

@@ -8,10 +8,10 @@
 
   <group_state name="home" group="arm">
     <joint name="joint_1" value="0.0"/>
-    <joint name="joint_2" value="-1.05"/>
-    <joint name="joint_3" value="1.25"/>
-    <joint name="joint_4" value="0.0"/>
-    <joint name="joint_5" value="0.35"/>
+    <joint name="joint_2" value="-1.57079632679"/>
+    <joint name="joint_3" value="0.0"/>
+    <joint name="joint_4" value="-1.57079632679"/>
+    <joint name="joint_5" value="0.0"/>
     <joint name="joint_6" value="0.0"/>
   </group_state>
 

@@ -33,6 +33,8 @@ def generate_launch_description():
     auto_home = LaunchConfiguration("auto_home")
     ros2_control_plugin = LaunchConfiguration("ros2_control_plugin")
     ros2_control_system_name = LaunchConfiguration("ros2_control_system_name")
+    visual_mode = LaunchConfiguration("visual_mode")
+    collision_mode = LaunchConfiguration("collision_mode")
 
     xacro_file = PathJoinSubstitution(
         [FindPackageShare("arm_description"), "urdf", "arm.urdf.xacro"]
@@ -53,6 +55,12 @@ def generate_launch_description():
                 " ",
                 "ros2_control_system_name:=",
                 ros2_control_system_name,
+                " ",
+                "visual_mode:=",
+                visual_mode,
+                " ",
+                "collision_mode:=",
+                collision_mode,
             ]
         )
     }
@@ -116,6 +124,8 @@ def generate_launch_description():
             "auto_home": auto_home,
             "ros2_control_plugin": ros2_control_plugin,
             "ros2_control_system_name": ros2_control_system_name,
+            "visual_mode": visual_mode,
+            "collision_mode": collision_mode,
         }.items(),
     )
 
@@ -144,6 +154,8 @@ def generate_launch_description():
         parameters=[
             robot_description,
             robot_description_semantic,
+            robot_description_kinematics,
+            robot_description_planning,
         ],
     )
     delayed_rviz_node = TimerAction(period=2.0, actions=[rviz_node])
@@ -169,6 +181,16 @@ def generate_launch_description():
                 "ros2_control_system_name",
                 default_value="ArmFakeSystem",
                 description="System name used in the robot description ros2_control block.",
+            ),
+            DeclareLaunchArgument(
+                "visual_mode",
+                default_value="cad",
+                description="Robot visual mode passed to xacro (cad or primitive).",
+            ),
+            DeclareLaunchArgument(
+                "collision_mode",
+                default_value="simple",
+                description="Collision mode passed to xacro.",
             ),
             bringup_launch,
             move_group_node,
