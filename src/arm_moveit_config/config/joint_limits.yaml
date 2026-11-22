@@ -1,4 +1,14 @@
 joint_limits:
+  finger_left_joint:
+    has_velocity_limits: true
+    max_velocity: 0.08
+    has_acceleration_limits: true
+    max_acceleration: 0.3
+  finger_right_joint:
+    has_velocity_limits: true
+    max_velocity: 0.08
+    has_acceleration_limits: true
+    max_acceleration: 0.3
   joint_1:
     has_velocity_limits: true
     max_velocity: 3.1416

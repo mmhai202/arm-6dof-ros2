@@ -12,7 +12,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("use_rviz", default_value="true", description="Enable RViz."),
         DeclareLaunchArgument(
-            "auto_home", default_value="false",
+            "auto_home", default_value="true",
             description="Auto-home after controller activation.",
         ),
         IncludeLaunchDescription(

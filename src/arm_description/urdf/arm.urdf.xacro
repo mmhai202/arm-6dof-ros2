@@ -335,36 +335,35 @@
         <geometry>
           <sphere radius="${wrist_3_radius + 0.008}"/>
         </geometry>
-        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <origin xyz="0 0 -0.027" rpy="0 0 0"/>
         <material name="ur_dark"/>
       </visual>
       <visual>
         <geometry>
-          <cylinder radius="${wrist_3_radius}" length="0.072"/>
+          <cylinder radius="${wrist_3_radius}" length="0.054"/>
         </geometry>
-        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <origin xyz="0 0 -0.027" rpy="0 0 0"/>
         <material name="ur_dark"/>
       </visual>
     </xacro:unless>
     <collision>
       <geometry>
-        <cylinder radius="${wrist_3_radius}" length="0.080"/>
+        <cylinder radius="${wrist_3_radius}" length="0.054"/>
       </geometry>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.027" rpy="0 0 0"/>
     </collision>
-    <xacro:cylinder_inertial mass="0.365" radius="${wrist_3_radius}" length="0.080"/>
+    <xacro:cylinder_inertial mass="0.365" radius="${wrist_3_radius}" length="0.054" origin_z="-0.027"/>
   </link>
 
   <link name="flange">
-    <xacro:unless value="${use_cad_visuals}">
-      <visual>
-        <geometry>
-          <cylinder radius="${flange_radius + 0.004}" length="${flange_thickness + 0.010}"/>
-        </geometry>
-        <origin xyz="0 0 ${(flange_thickness + 0.010) / 2.0}" rpy="0 0 0"/>
-        <material name="ur_metal"/>
-      </visual>
-    </xacro:unless>
+    <!-- Adapter plate starts on the CAD mounting face and meets tool0 without a gap. -->
+    <visual>
+      <geometry>
+        <cylinder radius="${flange_radius}" length="${flange_thickness}"/>
+      </geometry>
+      <origin xyz="0 0 ${flange_thickness / 2.0}" rpy="0 0 0"/>
+      <material name="ur_metal"/>
+    </visual>
     <collision>
       <geometry>
         <cylinder radius="${flange_radius}" length="${flange_thickness}"/>
@@ -375,10 +374,64 @@
   </link>
 
   <link name="tool0">
+    <visual>
+      <origin xyz="0 0 0.015"/>
+      <geometry><cylinder radius="0.016" length="0.030"/></geometry>
+      <material name="ur_metal"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.015"/>
+      <geometry><cylinder radius="0.016" length="0.030"/></geometry>
+    </collision>
     <xacro:cylinder_inertial mass="0.15" radius="${tool_radius}" length="${tool_length}" origin_z="${tool_length / 2.0}"/>
   </link>
 
   <link name="tcp"/>
+
+  <!-- Parallel jaws extend beyond the TCP to the payload centre at TCP +Z=0.05.
+       At q=0 their inner faces are 40 mm apart; at q=0.025 they are 90 mm apart.
+       Finger tips end 5 mm above the supporting shelf during the grasp. -->
+  <link name="gripper_palm">
+    <visual>
+      <geometry><box size="0.110 0.050 0.030"/></geometry>
+      <material name="ur_black"/>
+    </visual>
+    <collision><geometry><box size="0.110 0.050 0.030"/></geometry></collision>
+    <xacro:box_inertial mass="0.30" x="0.110" y="0.050" z="0.030"/>
+  </link>
+  <joint name="tcp_to_gripper_palm" type="fixed">
+    <parent link="tcp"/><child link="gripper_palm"/>
+    <origin xyz="0 0 -0.030"/>
+  </joint>
+
+  <xacro:macro name="gripper_finger" params="side sign">
+    <link name="finger_${side}">
+      <visual>
+        <origin xyz="0 0 0.055"/>
+        <geometry><box size="0.008 0.024 0.080"/></geometry>
+        <material name="ur_metal"/>
+      </visual>
+      <visual>
+        <origin xyz="${-sign * 0.0035} 0 0.080"/>
+        <geometry><box size="0.001 0.024 0.025"/></geometry>
+        <material name="ur_black"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0.055"/>
+        <geometry><box size="0.008 0.024 0.080"/></geometry>
+      </collision>
+      <xacro:box_inertial mass="0.06" x="0.008" y="0.024" z="0.080" origin_z="0.055"/>
+    </link>
+    <joint name="finger_${side}_joint" type="prismatic">
+      <parent link="gripper_palm"/><child link="finger_${side}"/>
+      <origin xyz="${sign * 0.024} 0 0"/>
+      <axis xyz="${sign} 0 0"/>
+      <limit lower="0.0" upper="0.025" effort="30" velocity="0.08"/>
+      <dynamics damping="0.1" friction="0.05"/>
+    </joint>
+  </xacro:macro>
+  <xacro:gripper_finger side="left" sign="1"/>
+  <xacro:gripper_finger side="right" sign="-1"/>
 
   <joint name="base_footprint_to_base_link" type="fixed">
     <parent link="base_footprint"/>
@@ -443,13 +496,15 @@
   <joint name="link_6_to_flange" type="fixed">
     <parent link="link_6"/>
     <child link="flange"/>
-    <origin xyz="0 0 0" rpy="0 ${-PI_CONST / 2.0} ${-PI_CONST / 2.0}"/>
+    <!-- CAD mounting face is centred at link_6 (x,y,z)=(0,0,0), normal +Z.
+         Keep flange, adapter, TCP and the palm on that same physical axis. -->
+    <origin xyz="0 0 0" rpy="0 0 0"/>
   </joint>
 
   <joint name="tool0_fixed_joint" type="fixed">
     <parent link="flange"/>
     <child link="tool0"/>
-    <origin xyz="0 0 ${flange_thickness}" rpy="${PI_CONST / 2.0} 0 ${PI_CONST / 2.0}"/>
+    <origin xyz="0 0 ${flange_thickness}" rpy="0 0 0"/>
   </joint>
 
   <joint name="tool0_to_tcp" type="fixed">
@@ -501,5 +556,14 @@
       <state_interface name="position"/>
       <state_interface name="velocity"/>
     </joint>
+    <xacro:macro name="gripper_control_joint" params="side">
+      <joint name="finger_${side}_joint">
+        <command_interface name="position"/>
+        <state_interface name="position"><param name="initial_value">0.025</param></state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+    </xacro:macro>
+    <xacro:gripper_control_joint side="left"/>
+    <xacro:gripper_control_joint side="right"/>
   </ros2_control>
 </robot>

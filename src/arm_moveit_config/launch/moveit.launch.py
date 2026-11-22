@@ -47,6 +47,8 @@ def generate_launch_description():
     }
     scene_monitor = {
         "publish_planning_scene": True,
+        # RViz's Scene Robot follows these updates, not only its render timer.
+        "publish_planning_scene_hz": 60.0,
         "publish_geometry_updates": True,
         "publish_state_updates": True,
         "publish_transforms_updates": True,
@@ -55,7 +57,7 @@ def generate_launch_description():
     }
     rviz = Node(
         package="rviz2", executable="rviz2", output="screen",
-        arguments=["-d", str(package_file(PACKAGE, "rviz/moveit.rviz"))],
+        arguments=["-d", LaunchConfiguration("rviz_config")],
         condition=IfCondition(LaunchConfiguration("use_moveit_rviz")),
         parameters=model_parameters,
     )
@@ -64,11 +66,15 @@ def generate_launch_description():
             "use_moveit_rviz", default_value="true", description="Enable MoveIt RViz.",
         ),
         DeclareLaunchArgument(
+            "rviz_config", default_value=str(package_file(PACKAGE, "rviz/moveit.rviz")),
+            description="RViz display configuration.",
+        ),
+        DeclareLaunchArgument(
             "auto_home", default_value="true", description="Move to the initial pose on startup.",
         ),
         DeclareLaunchArgument(
-            "initial_pose", default_value="ready", choices=sorted(load_named_poses()),
-            description="Start with a bent arm so the interactive TCP goal has room to move.",
+            "initial_pose", default_value="home", choices=sorted(load_named_poses()),
+            description="Named pose used for the initial motion on startup.",
         ),
         *robot_arguments(),
         IncludeLaunchDescription(

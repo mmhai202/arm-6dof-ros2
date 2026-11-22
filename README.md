@@ -13,11 +13,11 @@ Requires Miniforge/Miniconda with `conda` on `PATH`. Run from the workspace root
 Choose one mode:
 
 ```bash
-./scripts/run_moveit_demo.sh    # MoveIt: drag the goal in RViz, then Plan & Execute
-./scripts/run_planning_mode.sh # Custom planner: send named poses from a terminal
+./scripts/run_moveit_mode.sh # MoveIt: drag the goal in RViz, then Plan & Execute
+./scripts/run_custom_mode.sh # Custom planner: send named poses from a terminal
 ```
 
-Both support `--headless`; custom planning also supports `--auto-home`.
+Both modes automatically move to `home` on startup and support `--headless`.
 Run scripts only check and launch. Missing dependencies or build artifacts are reported.
 Rerun the installer after source changes or cleanup.
 
@@ -34,6 +34,19 @@ ros2 run arm_planning call_planning_service.py --pose-sequence home reach_forwar
 ```
 
 Keep this Conda environment separate from `/opt/ros`.
+
+## Demo: pick from a cabinet shelf into a floor box
+
+```bash
+colcon build --packages-select arm_moveit_config --symlink-install  # Rebuild in the activated environment
+./scripts/run_moveit_mode.sh --pick-place             # Pick from shelf and place in floor box
+./scripts/run_moveit_mode.sh --scene-only             # Show scene only
+./scripts/run_moveit_mode.sh --plan-only              # Plan without moving
+./scripts/run_moveit_mode.sh --pick-place --headless  # Run without RViz
+ros2 run arm_moveit_config shelf_pick_place.py --mode execute  # Repeat in an active MoveIt session
+```
+
+![Robot simulation demo](tests/demo.gif)
 
 ## Cleanup and tests
 

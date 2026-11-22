@@ -1,0 +1,29 @@
+# Metres, in base_footprint. Robot base and box bottom are on z=0.
+# Cabinet opens toward -X, with enough headroom for a top-down grasp.
+frame: base_footprint
+shelf:
+  center_xy: [0.52, 0.25]
+  size_xy: [0.36, 0.38]
+  surface_z: 0.42
+  top_z: 0.95
+  thickness: 0.02
+object:
+  size: [0.04, 0.04, 0.04]
+  center_xy: [0.43, 0.25]
+box:
+  center_xy: [0.40, -0.35]
+  size_xy: [0.28, 0.28]
+  height: 0.18
+  thickness: 0.015
+motion:
+  gripper_open: 0.025
+  tcp_gap: 0.03
+  approach: 0.10
+  lift: 0.14
+  withdraw_clearance: 0.30
+  transfer_z: 0.55
+  place_clearance: 0.005
+  velocity_scale: 0.50
+  acceleration_scale: 0.50
+  cartesian_step: 0.005
+  planning_time: 10.0

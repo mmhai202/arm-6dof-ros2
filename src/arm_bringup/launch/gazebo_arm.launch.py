@@ -17,7 +17,7 @@ def generate_launch_description():
             package="controller_manager", executable="spawner", output="screen",
             arguments=[controller, "--controller-manager", "/controller_manager"],
         )
-        for controller in ("joint_state_broadcaster", "arm_controller")
+        for controller in ("joint_state_broadcaster", "arm_controller", "gripper_controller")
     ]
     gazebo_launch = PathJoinSubstitution(
         [FindPackageShare("gazebo_ros"), "launch", "gazebo.launch.py"]
@@ -36,7 +36,9 @@ def generate_launch_description():
         ),
         Node(
             package="robot_state_publisher", executable="robot_state_publisher", output="screen",
-            parameters=[robot_description(gazebo=True), {"use_sim_time": True}],
+            parameters=[robot_description(gazebo=True), {
+                "use_sim_time": True, "publish_frequency": 100.0,
+            }],
         ),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(gazebo_launch),

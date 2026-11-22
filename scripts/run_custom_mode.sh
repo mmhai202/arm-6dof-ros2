@@ -5,9 +5,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=scripts/install_dependencies.sh
 source "${ROOT_DIR}/scripts/install_dependencies.sh"
-ROS_LOG_DIR_PATH="${ROS_LOG_DIR:-/tmp/arm_planning_mode_logs}"
+ROS_LOG_DIR_PATH="${ROS_LOG_DIR:-/tmp/arm_custom_mode_logs}"
 use_rviz="true"
-auto_home="false"
+auto_home="true"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in

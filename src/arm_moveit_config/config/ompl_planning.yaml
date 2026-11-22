@@ -6,3 +6,7 @@ planner_configs:
 arm:
   planner_configs:
     - RRTConnect
+
+gripper:
+  planner_configs:
+    - RRTConnect

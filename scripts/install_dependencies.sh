@@ -274,7 +274,7 @@ arm_install_dependencies() {
     "-DPython3_EXECUTABLE=${CONDA_PREFIX}/bin/python" \
     "-DPYTHON_EXECUTABLE=${CONDA_PREFIX}/bin/python" \
     -DPython3_FIND_STRATEGY=LOCATION -DPython_FIND_STRATEGY=LOCATION
-  echo "[ok] Workspace ready. Use run_planning_mode.sh or run_moveit_demo.sh."
+  echo "[ok] Workspace ready. Use run_custom_mode.sh or run_moveit_mode.sh."
 }
 
 # Launchers source the helpers above; installation only happens on direct execution.

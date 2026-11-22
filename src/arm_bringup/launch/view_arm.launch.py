@@ -12,12 +12,12 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    joint_state_spawner, arm_spawner = [
+    joint_state_spawner, arm_spawner, gripper_spawner = [
         Node(
             package="controller_manager", executable="spawner", output="screen",
             arguments=[controller, "--controller-manager", "/controller_manager"],
         )
-        for controller in ("joint_state_broadcaster", "arm_controller")
+        for controller in ("joint_state_broadcaster", "arm_controller", "gripper_controller")
     ]
     auto_home = Node(
         package="arm_control", executable="send_trajectory_goal.py", output="screen",
@@ -44,7 +44,7 @@ def generate_launch_description():
         *robot_arguments(),
         Node(
             package="robot_state_publisher", executable="robot_state_publisher",
-            parameters=[robot_description()], output="screen",
+            parameters=[robot_description(), {"publish_frequency": 100.0}], output="screen",
         ),
         Node(
             package="controller_manager", executable="ros2_control_node", output="screen",
@@ -53,6 +53,7 @@ def generate_launch_description():
         ),
         joint_state_spawner,
         arm_spawner,
+        gripper_spawner,
         RegisterEventHandler(OnProcessExit(
             target_action=arm_spawner, on_exit=[TimerAction(period=1.0, actions=[auto_home])],
         )),

@@ -1,0 +1,347 @@
+"""Plan the entire task before executing it through MoveIt's trajectory action."""
+
+import argparse
+import math
+import sys
+import time
+
+from action_msgs.msg import GoalStatus
+from arm_control.poses import load_named_poses
+from arm_control.trajectory import wait_for_future
+from arm_description import GRIPPER_JOINT_NAMES, JOINT_NAMES
+from arm_description.resources import load_yaml
+from arm_moveit_config.shelf_scene import OBJECT_ID, TOUCH_LINKS, ShelfScene, position_limits, scene_diff
+from geometry_msgs.msg import PoseStamped
+from moveit_msgs.action import ExecuteTrajectory
+from moveit_msgs.msg import (
+    AllowedCollisionEntry, CollisionObject, Constraints, JointConstraint, MoveItErrorCodes,
+    PlanningSceneComponents, RobotState,
+)
+from moveit_msgs.srv import (
+    ApplyPlanningScene, GetCartesianPath, GetMotionPlan, GetPlanningScene, GetPositionIK,
+)
+from rclpy.action import ActionClient
+from rclpy.node import Node
+import rclpy
+from sensor_msgs.msg import JointState
+from std_msgs.msg import Header
+
+
+class ShelfTask(Node):
+    def __init__(self):
+        super().__init__("shelf_pick_place")
+        self.scene = ShelfScene()
+        self.position_limits = position_limits()
+        self.service_clients = {}
+        self.executor_client = ActionClient(self, ExecuteTrajectory, "/execute_trajectory")
+        self.latest_joints = None
+        self.joint_subscription = self.create_subscription(
+            JointState, "/joint_states", self.on_joints, 10)
+        self.declare_parameter("mode", "execute")
+
+    def on_joints(self, message):
+        if set((*JOINT_NAMES, *GRIPPER_JOINT_NAMES)).issubset(message.name):
+            self.latest_joints = message
+
+    def wait_for_joints(self):
+        deadline = time.monotonic() + 30
+        while self.latest_joints is None and time.monotonic() < deadline:
+            rclpy.spin_once(self, timeout_sec=0.1)
+        if self.latest_joints is None:
+            raise RuntimeError("No complete /joint_states received from fake hardware.")
+
+    def call(self, service, name, request):
+        if name not in self.service_clients:
+            self.service_clients[name] = self.create_client(service, name)
+        client = self.service_clients[name]
+        if not client.wait_for_service(timeout_sec=30):
+            raise RuntimeError(f"MoveIt service unavailable: {name}")
+        return wait_for_future(client.call_async(request), 45, node=self)
+
+    def apply(self, scene):
+        if any(item.object.operation == CollisionObject.REMOVE
+               for item in scene.robot_state.attached_collision_objects):
+            request = GetPlanningScene.Request(components=PlanningSceneComponents(
+                components=PlanningSceneComponents.ROBOT_STATE_ATTACHED_OBJECTS))
+            current = self.call(GetPlanningScene, "/get_planning_scene", request).scene
+            attached = {item.object.id for item in current.robot_state.attached_collision_objects}
+            scene.robot_state.attached_collision_objects = [
+                item for item in scene.robot_state.attached_collision_objects
+                if item.object.operation != CollisionObject.REMOVE or item.object.id in attached
+            ]
+        response = self.call(ApplyPlanningScene, "/apply_planning_scene",
+                             ApplyPlanningScene.Request(scene=scene))
+        if not response.success:
+            raise RuntimeError("MoveIt rejected a planning scene update.")
+
+    def state(self):
+        request = GetPlanningScene.Request(components=PlanningSceneComponents(
+            components=PlanningSceneComponents.ROBOT_STATE))
+        current = self.call(GetPlanningScene, "/get_planning_scene", request).scene.robot_state
+        positions = dict(zip(current.joint_state.name, current.joint_state.position))
+        if not set((*JOINT_NAMES, *GRIPPER_JOINT_NAMES)).issubset(positions):
+            raise RuntimeError("MoveIt has not received all arm and gripper joint states.")
+        return RobotState(is_diff=True, joint_state=JointState(
+            name=list(positions), position=list(positions.values())))
+
+    def goal_constraints(self, target, names=JOINT_NAMES):
+        tolerance = 0.00005 if names == GRIPPER_JOINT_NAMES else 0.001
+        return Constraints(joint_constraints=[JointConstraint(
+            joint_name=name, position=value, tolerance_above=tolerance,
+            tolerance_below=tolerance, weight=1.0,
+        ) for name, value in zip(names, target)])
+
+    def plan_motion(self, kind, target, state):
+        m = self.scene.motion
+        if kind == "cartesian":
+            request = GetCartesianPath.Request(
+                header=Header(frame_id=self.scene.frame), start_state=state,
+                group_name="arm", link_name="tcp", waypoints=[target],
+                max_step=m["cartesian_step"], jump_threshold=2.0,
+                revolute_jump_threshold=0.4, avoid_collisions=True,
+                max_velocity_scaling_factor=m["velocity_scale"],
+                max_acceleration_scaling_factor=m["acceleration_scale"],
+            )
+            response = self.call(GetCartesianPath, "/compute_cartesian_path", request)
+            if response.error_code.val != MoveItErrorCodes.SUCCESS or response.fraction < 0.999:
+                raise RuntimeError(f"Cartesian path incomplete: {response.fraction:.1%}, "
+                                   f"MoveIt code {response.error_code.val}.")
+            trajectory = response.solution
+        else:
+            request = GetMotionPlan.Request()
+            plan = request.motion_plan_request
+            plan.group_name = "gripper" if kind == "gripper" else "arm"
+            plan.pipeline_id = "ompl"
+            plan.start_state = state
+            plan.num_planning_attempts = 5
+            plan.allowed_planning_time = m["planning_time"]
+            plan.max_velocity_scaling_factor = m["velocity_scale"]
+            plan.max_acceleration_scaling_factor = m["acceleration_scale"]
+            plan.goal_constraints = [self.goal_constraints(
+                target, GRIPPER_JOINT_NAMES if kind == "gripper" else JOINT_NAMES)]
+            response = self.call(GetMotionPlan, "/plan_kinematic_path", request).motion_plan_response
+            if response.error_code.val != MoveItErrorCodes.SUCCESS:
+                raise RuntimeError(f"OMPL planning failed: MoveIt code {response.error_code.val}.")
+            trajectory = response.trajectory
+        points = trajectory.joint_trajectory.points
+        if not points:
+            raise RuntimeError("MoveIt returned an empty trajectory.")
+        ensure_timing(trajectory, m["velocity_scale"], m["acceleration_scale"])
+        return trajectory
+
+    def plan_task(self):
+        state = self.state()
+        stages = [("open_gripper", "gripper", (self.scene.motion["gripper_open"],) * 2),
+                  ("home", "ompl", load_named_poses()["home"]), *self.scene.stages(),
+                  ("return_home", "ompl", load_named_poses()["home"])]
+        planned = []
+        try:
+            for name, kind, target in stages:
+                self.get_logger().info(f"Planning: {name}")
+                if kind == "scene":
+                    self.change_scene(name)
+                    planned.append((name, None))
+                    continue
+                if name in ("outside_shelf", "above_box"):
+                    poses = {n: p for n, _, p in self.scene.stages()}
+                    endpoint = poses["grasp" if name == "outside_shelf" else "place"]
+                    via = [poses["pre_grasp"], target] if name == "outside_shelf" else [target]
+                    trajectory = self.approach_motion(endpoint, via, state)
+                else:
+                    trajectory = self.plan_motion(kind, target, state)
+                planned.append((name, trajectory))
+                state = updated_state(state, trajectory.joint_trajectory)
+        finally:
+            # Planning uses virtual joint states; restore the payload to the shelf
+            # before any real execution or after a rejected partial plan.
+            self.apply(self.scene.initial())
+            self.set_finger_contact(False)
+        return planned
+
+    def set_finger_contact(self, allowed):
+        request = GetPlanningScene.Request(components=PlanningSceneComponents(
+            components=PlanningSceneComponents.ALLOWED_COLLISION_MATRIX))
+        matrix = self.call(GetPlanningScene, "/get_planning_scene", request).scene.allowed_collision_matrix
+        for name in [OBJECT_ID, *TOUCH_LINKS]:
+            if name not in matrix.entry_names:
+                matrix.entry_names.append(name)
+                for row in matrix.entry_values:
+                    row.enabled.append(False)
+                matrix.entry_values.append(AllowedCollisionEntry(enabled=[False] * len(matrix.entry_names)))
+        obj_index = matrix.entry_names.index(OBJECT_ID)
+        for link in TOUCH_LINKS:
+            index = matrix.entry_names.index(link)
+            matrix.entry_values[obj_index].enabled[index] = allowed
+            matrix.entry_values[index].enabled[obj_index] = allowed
+        diff = scene_diff()
+        diff.allowed_collision_matrix = matrix
+        self.apply(diff)
+
+    def change_scene(self, name):
+        if name in ("allow_finger_contact", "forbid_finger_contact"):
+            self.set_finger_contact(name == "allow_finger_contact")
+        elif name == "attach":
+            self.apply(self.scene.attach())
+        elif name == "detach":
+            self.apply(self.scene.detach(self.scene.place_center))
+        else:
+            raise ValueError(f"Unknown scene stage: {name}")
+
+    def approach_motion(self, endpoint, via, state):
+        """Choose an IK branch that also permits the entire vertical approach.
+
+        A pose-only OMPL goal can select an elbow posture that reaches the top
+        waypoint but collides with the shelf or box during the later descent.
+        Solve at the bottom and trace the approach backward, then plan to the
+        entrance joints. Try another IK branch if free-space planning fails.
+        """
+        seeds = [state]
+        for shoulder in (-2.3, 0.8):
+            for elbow in (-1.5, 1.5):
+                for wrist in (-1.57, 1.57):
+                    values = dict(zip(state.joint_state.name, state.joint_state.position))
+                    values.update(zip(JOINT_NAMES, [shoulder, -1.8, elbow, -1.5, wrist, 0.0]))
+                    seeds.append(RobotState(is_diff=True, joint_state=JointState(
+                        name=list(values), position=list(values.values()))))
+        for seed in seeds:
+            request = GetPositionIK.Request()
+            ik = request.ik_request
+            ik.group_name = "arm"
+            ik.ik_link_name = "tcp"
+            ik.robot_state = seed
+            ik.pose_stamped = PoseStamped(header=Header(frame_id=self.scene.frame), pose=endpoint)
+            ik.avoid_collisions = True
+            ik.timeout.nanosec = 300_000_000
+            result = self.call(GetPositionIK, "/compute_ik", request)
+            if result.error_code.val != MoveItErrorCodes.SUCCESS:
+                continue
+            bottom = result.solution
+            bottom.is_diff = True
+            try:
+                for waypoint in via:
+                    path = self.plan_motion("cartesian", waypoint, bottom).joint_trajectory
+                    bottom = updated_state(bottom, path)
+                positions = dict(zip(path.joint_names, path.points[-1].positions))
+                current = dict(zip(state.joint_state.name, state.joint_state.position))
+                target = tuple(nearest_angle(positions[name], current[name], self.position_limits[name])
+                               for name in JOINT_NAMES)
+                return self.plan_motion("ompl", target, state)
+            except RuntimeError:
+                continue
+        raise RuntimeError("No collision-free IK branch supports the complete approach.")
+
+    def execute(self, trajectory):
+        client = self.executor_client
+        if not client.wait_for_server(timeout_sec=15):
+            raise RuntimeError("MoveIt execute_trajectory action is unavailable.")
+        handle = wait_for_future(client.send_goal_async(ExecuteTrajectory.Goal(
+            trajectory=trajectory)), 15, node=self)
+        if handle is None or not handle.accepted:
+            raise RuntimeError("MoveIt rejected trajectory execution.")
+        try:
+            duration = trajectory.joint_trajectory.points[-1].time_from_start
+            timeout = duration.sec + duration.nanosec / 1e9 + 20
+            result = wait_for_future(handle.get_result_async(), timeout, node=self)
+        except (TimeoutError, KeyboardInterrupt):
+            wait_for_future(handle.cancel_goal_async(), 5, node=self)
+            raise
+        if (result.status != GoalStatus.STATUS_SUCCEEDED
+                or result.result.error_code.val != MoveItErrorCodes.SUCCESS):
+            raise RuntimeError(f"MoveIt execution failed: {result.result.error_code.val}.")
+
+    def run(self, mode):
+        initial = self.scene.initial()
+        request = GetPlanningScene.Request(components=PlanningSceneComponents(
+            components=PlanningSceneComponents.WORLD_OBJECT_NAMES))
+        current = self.call(GetPlanningScene, "/get_planning_scene", request).scene
+        if any(obj.id == "cabinet_back" for obj in current.world.collision_objects):
+            initial.world.collision_objects.append(CollisionObject(
+                id="cabinet_back", operation=CollisionObject.REMOVE))
+        self.apply(initial)
+        self.set_finger_contact(False)
+        if mode == "scene":
+            self.get_logger().info("Cabinet, payload, floor and open box are ready in RViz.")
+            return
+        self.wait_for_joints()
+        planned = self.plan_task()
+        self.get_logger().info("All task stages planned successfully.")
+        if mode == "plan":
+            return
+        for name, trajectory in planned:
+            self.get_logger().info(f"Executing: {name}")
+            if trajectory is not None:
+                self.execute(trajectory)
+            else:
+                self.change_scene(name)
+        self.get_logger().info("SUCCESS: payload placed inside the floor box; arm returned home.")
+
+
+def updated_state(state, trajectory):
+    """Arm and finger trajectories update separate joints of one virtual state."""
+    positions = dict(zip(state.joint_state.name, state.joint_state.position))
+    positions.update(zip(trajectory.joint_names, trajectory.points[-1].positions))
+    return RobotState(is_diff=True, joint_state=JointState(
+        name=list(positions), position=list(positions.values())))
+
+
+def nearest_angle(angle, reference, limits):
+    """Avoid unnecessary full turns when IK returns an equivalent joint angle."""
+    lower, upper = limits
+    first = math.ceil((lower - angle) / (2 * math.pi))
+    last = math.floor((upper - angle) / (2 * math.pi))
+    candidates = [angle + turn * 2 * math.pi for turn in range(first, last + 1)]
+    if not candidates:
+        raise RuntimeError("IK returned an angle outside the robot joint limits.")
+    return min(candidates, key=lambda candidate: abs(candidate - reference))
+
+
+def ensure_timing(trajectory, velocity_scale, acceleration_scale):
+    """Recover from Humble Cartesian TOTG failures without changing the path.
+
+    The fallback uses cubic segments with zero endpoint velocities. Their peak
+    speed is 1.5*dq/dt and peak acceleration is 6*dq/dt**2.
+    """
+    joint_path = trajectory.joint_trajectory
+    points = joint_path.points
+    times = [p.time_from_start.sec + p.time_from_start.nanosec / 1e9 for p in points]
+    if len(points) > 1 and times[0] >= 0 and all(b > a for a, b in zip(times, times[1:])):
+        return
+    limits = load_yaml("arm_moveit_config", "config/joint_limits.yaml")["joint_limits"]
+    elapsed = 0.0
+    for index, point in enumerate(points):
+        if index:
+            delta = [abs(a - b) for a, b in zip(point.positions, points[index - 1].positions)]
+            elapsed += max([0.03] + [max(
+                1.5 * dq / (limits[name]["max_velocity"] * velocity_scale),
+                math.sqrt(6 * dq / (limits[name]["max_acceleration"] * acceleration_scale)),
+            ) for name, dq in zip(joint_path.joint_names, delta)])
+        sec, nanosec = divmod(round(elapsed * 1e9), 1_000_000_000)
+        point.time_from_start.sec = sec
+        point.time_from_start.nanosec = nanosec
+        point.velocities = [0.0] * len(joint_path.joint_names)
+        point.accelerations = []
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="MoveIt cabinet-to-floor-box simulation.")
+    parser.add_argument("--mode", choices=("scene", "plan", "execute"), default=None,
+                        help="Scene only, preflight planning, or plan then execute (default).")
+    args, ros_args = parser.parse_known_args(argv)
+    rclpy.init(args=ros_args)
+    node = ShelfTask()
+    try:
+        mode = args.mode or node.get_parameter("mode").value
+        if mode not in ("scene", "plan", "execute"):
+            raise ValueError(f"Unknown task mode: {mode}")
+        node.run(mode)
+        return 0
+    except (RuntimeError, TimeoutError, ValueError, KeyboardInterrupt) as error:
+        node.get_logger().error(f"Task stopped: {error}. Scene retained for inspection.")
+        return 1
+    finally:
+        node.destroy_node()
+        rclpy.try_shutdown()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

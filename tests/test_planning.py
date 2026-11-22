@@ -34,8 +34,8 @@ class PlannerTest(unittest.TestCase):
 
     def test_known_forward_kinematics(self):
         for values, expected in (
-            ([0.0] * 6, (-0.8172, -0.2929, 0.0808)),
-            (self.poses["home"], (0.0, -0.2929, 1.0614)),
+            ([0.0] * 6, (-0.8172, -0.3109, 0.0628)),
+            (self.poses["home"], (0.0, -0.3109, 1.0794)),
         ):
             tcp = self.planner.model.tcp_position(values)
             for actual, reference in zip((tcp.x, tcp.y, tcp.z), expected):
