@@ -20,7 +20,7 @@ try:
     from sensor_msgs.msg import JointState
     import xacro
     import numpy as np
-    from arm_planning.model import RobotModel
+    from arm_description.model import RobotModel
 except ImportError as exc:
     raise unittest.SkipTest("Activate Conda and source install/setup.bash") from exc
 
@@ -104,7 +104,7 @@ class ShelfSceneTest(unittest.TestCase):
             self.assertIsNotNone(hardware.find("command_interface[@name='position']"))
 
     def test_gripper_mount_is_concentric_with_actual_cad_face(self):
-        raw = package_file("arm_description", "meshes/ur7e/local/link_6.stl").read_bytes()
+        raw = package_file("arm_description", "meshes/ur7e/link_6.stl").read_bytes()
         dtype = np.dtype([("normal", "<f4", (3,)), ("vertices", "<f4", (3, 3)), ("attr", "<u2")])
         triangles = np.frombuffer(raw, dtype=dtype, offset=84)["vertices"]
         # Derive the mounting face from the CAD itself, independently of URDF offsets.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Setup entry point and shared helpers for the two launchers.
+# Setup entry point and shared helpers for the MoveIt launcher.
 # Source this file to use arm_activate_conda without installing or building.
 
 ARM_BASE_DEPENDENCIES=(
@@ -17,8 +17,6 @@ ARM_BASE_DEPENDENCIES=(
   'ros-humble-ament-cmake'
   'ros-humble-ament-cmake-python'
   'ros-humble-ament-index-python'
-  'ros-humble-rosidl-default-generators'
-  'ros-humble-rosidl-default-runtime'
   'ros-humble-rclpy'
   'ros-humble-launch'
   'ros-humble-launch-ros'
@@ -44,7 +42,6 @@ ARM_EXTRA_DEPENDENCIES=(
   'gazebo=11.*'
   'ros-humble-gazebo-ros'
   'ros-humble-gazebo-ros2-control'
-  'ocp'
 )
 
 ARM_ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -123,19 +120,17 @@ arm_check_dependencies() {
   local -a commands=(python3 ros2 xacro) specs=("${ARM_BASE_DEPENDENCIES[@]}")
   local -a modules=(numpy yaml rclpy ament_index_python launch launch_ros control_msgs sensor_msgs trajectory_msgs)
   case "${profile}" in
-    planning) ;;
     moveit) specs+=("${ARM_MOVEIT_DEPENDENCIES[@]}"); modules+=(moveit_msgs) ;;
     all)
       commands+=(colcon cmake make ninja pkg-config)
       specs+=("${ARM_MOVEIT_DEPENDENCIES[@]}")
-      modules+=(rosidl_generator_py moveit_msgs)
+      modules+=(moveit_msgs)
       ;;
     *) echo "[error] Unknown dependency profile: ${profile}" >&2; return 1 ;;
   esac
   if [[ "${profile}" == all ]]; then
     commands+=(gazebo)
     specs+=("${ARM_EXTRA_DEPENDENCIES[@]}")
-    modules+=(OCP.BRepMesh OCP.STEPCAFControl OCP.XCAFDoc)
   fi
   for command in "${commands[@]}"; do
     command_path="$(type -P "${command}" || true)"
@@ -243,8 +238,6 @@ try:
         raise FileNotFoundError(launch)
     for module in ("arm_description.launch", "arm_description.resources", "arm_control.poses"):
         __import__(module)
-    if sys.argv[2] == "arm_planning":
-        __import__("arm_planning.service")
 except Exception as error:
     print(f"[missing] Workspace package {sys.argv[2]}: {error}", file=sys.stderr)
     sys.exit(1)
@@ -274,7 +267,7 @@ arm_install_dependencies() {
     "-DPython3_EXECUTABLE=${CONDA_PREFIX}/bin/python" \
     "-DPYTHON_EXECUTABLE=${CONDA_PREFIX}/bin/python" \
     -DPython3_FIND_STRATEGY=LOCATION -DPython_FIND_STRATEGY=LOCATION
-  echo "[ok] Workspace ready. Use run_custom_mode.sh or run_moveit_mode.sh."
+  echo "[ok] Workspace ready. Use run_moveit.sh."
 }
 
 # Launchers source the helpers above; installation only happens on direct execution.

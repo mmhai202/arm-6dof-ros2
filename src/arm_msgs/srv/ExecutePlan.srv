@@ -1,7 +1,0 @@
-string[] pose_names
-bool plan_only
----
-bool success
-string message
-uint32 waypoint_count
-float64 total_duration

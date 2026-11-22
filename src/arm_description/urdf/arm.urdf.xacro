@@ -71,7 +71,7 @@
   <xacro:property name="wrist_joint_damping" value="0.08"/>
   <xacro:property name="wrist_joint_friction" value="0.02"/>
 
-  <xacro:property name="cad_mesh_root" value="package://arm_description/meshes/ur7e/local"/>
+  <xacro:property name="cad_mesh_root" value="package://arm_description/meshes/ur7e"/>
   <xacro:property name="cad_mesh_scale" value="1 1 1"/>
 
   <xacro:macro name="box_inertial" params="mass x y z origin_x:=0.0 origin_y:=0.0 origin_z:=0.0">
@@ -528,32 +528,32 @@
 
     <joint name="joint_1">
       <command_interface name="position"/>
-      <state_interface name="position"/>
+      <state_interface name="position"><param name="initial_value">0.0</param></state_interface>
       <state_interface name="velocity"/>
     </joint>
     <joint name="joint_2">
       <command_interface name="position"/>
-      <state_interface name="position"/>
+      <state_interface name="position"><param name="initial_value">${-PI_CONST / 2.0}</param></state_interface>
       <state_interface name="velocity"/>
     </joint>
     <joint name="joint_3">
       <command_interface name="position"/>
-      <state_interface name="position"/>
+      <state_interface name="position"><param name="initial_value">0.0</param></state_interface>
       <state_interface name="velocity"/>
     </joint>
     <joint name="joint_4">
       <command_interface name="position"/>
-      <state_interface name="position"/>
+      <state_interface name="position"><param name="initial_value">${-PI_CONST / 2.0}</param></state_interface>
       <state_interface name="velocity"/>
     </joint>
     <joint name="joint_5">
       <command_interface name="position"/>
-      <state_interface name="position"/>
+      <state_interface name="position"><param name="initial_value">0.0</param></state_interface>
       <state_interface name="velocity"/>
     </joint>
     <joint name="joint_6">
       <command_interface name="position"/>
-      <state_interface name="position"/>
+      <state_interface name="position"><param name="initial_value">0.0</param></state_interface>
       <state_interface name="velocity"/>
     </joint>
     <xacro:macro name="gripper_control_joint" params="side">
