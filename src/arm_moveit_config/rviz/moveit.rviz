@@ -38,11 +38,11 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /robot_description
-      Enabled: true
+      Enabled: false
       Name: Robot Model
       TF Prefix: ""
       Update Interval: 0
-      Value: true
+      Value: false
       Visual Enabled: true
     - Class: moveit_rviz_plugin/MotionPlanning
       Enabled: true
@@ -51,13 +51,14 @@ Visualization Manager:
       Planned Path:
         Interrupt Display: true
         Loop Animation: false
-        Robot Alpha: 0.65
+        Robot Alpha: 0.25
         Show Robot Collision: false
         Show Robot Visual: true
         Show Trail: false
       Planning Group: arm
       Planning Request:
-        Goal State Alpha: 0.35
+        Goal State Alpha: 0.15
+        Goal State Color: 90; 190; 235
         Interactive Marker Size: 0.22
         Query Goal State: true
         Query Start State: false

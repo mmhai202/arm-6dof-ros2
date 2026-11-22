@@ -542,6 +542,8 @@ def export_single_component(step_file: Path, out_dir: Path, component_index: int
 
 
 def run_pipeline(args: argparse.Namespace) -> int:
+    from colorize_ur7e import colorize_mesh
+
     ensure_default_manifest(args.manifest)
     manifest = read_manifest(args.manifest)
     reference_pose = manifest.get("metadata", {}).get("reference_pose", DEFAULT_REFERENCE_JOINTS)
@@ -571,6 +573,7 @@ def run_pipeline(args: argparse.Namespace) -> int:
                 link_world_frame=link_frames[link_entry["link_name"]],
                 link_name=link_entry["link_name"],
             )
+            colorize_mesh(local_mesh_path)
 
     if not args.skip_local:
         report_path = generate_report(

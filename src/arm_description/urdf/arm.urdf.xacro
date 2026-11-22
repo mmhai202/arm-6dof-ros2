@@ -110,8 +110,18 @@
     </visual>
   </xacro:macro>
 
+  <!-- COLLADA carries separate silver, graphite and blue surface materials.
+       Leave the URDF material unset so RViz uses the embedded mesh materials. -->
+  <xacro:macro name="cad_visual" params="link_name">
+    <visual>
+      <geometry>
+        <mesh filename="${cad_mesh_root}/${link_name}.dae" scale="${cad_mesh_scale}"/>
+      </geometry>
+    </visual>
+  </xacro:macro>
+
   <material name="ur_dark">
-    <color rgba="0.12 0.13 0.15 1.0"/>
+    <color rgba="0.22 0.23 0.24 1.0"/>
   </material>
 
   <material name="ur_black">
@@ -123,14 +133,14 @@
   </material>
 
   <material name="ur_blue">
-    <color rgba="0.13 0.73 0.92 1.0"/>
+    <color rgba="0.56 0.79 0.90 1.0"/>
   </material>
 
   <link name="base_footprint"/>
 
   <link name="base_link">
     <xacro:if value="${use_cad_visuals}">
-      <xacro:mesh_visual mesh_name="base_link.stl" material_name="ur_black"/>
+      <xacro:cad_visual link_name="base_link"/>
     </xacro:if>
     <xacro:unless value="${use_cad_visuals}">
       <visual>
@@ -138,7 +148,7 @@
           <cylinder radius="${base_radius}" length="${base_height}"/>
         </geometry>
         <origin xyz="0 0 ${base_height / 2.0}" rpy="0 0 0"/>
-        <material name="ur_black"/>
+        <material name="ur_metal"/>
       </visual>
       <visual>
         <geometry>
@@ -159,7 +169,7 @@
 
   <link name="link_1">
     <xacro:if value="${use_cad_visuals}">
-      <xacro:mesh_visual mesh_name="link_1.stl" material_name="ur_dark"/>
+      <xacro:cad_visual link_name="link_1"/>
     </xacro:if>
     <xacro:unless value="${use_cad_visuals}">
       <visual>
@@ -188,7 +198,7 @@
 
   <link name="link_2">
     <xacro:if value="${use_cad_visuals}">
-      <xacro:mesh_visual mesh_name="link_2.stl" material_name="ur_dark"/>
+      <xacro:cad_visual link_name="link_2"/>
     </xacro:if>
     <xacro:unless value="${use_cad_visuals}">
       <visual>
@@ -196,7 +206,7 @@
           <box size="${upper_arm_body_length} ${upper_arm_body_width} ${upper_arm_body_height}"/>
         </geometry>
         <origin xyz="${upper_arm_x / 2.0} 0 0" rpy="0 0 0"/>
-        <material name="ur_dark"/>
+        <material name="ur_metal"/>
       </visual>
       <visual>
         <geometry>
@@ -224,7 +234,7 @@
 
   <link name="link_3">
     <xacro:if value="${use_cad_visuals}">
-      <xacro:mesh_visual mesh_name="link_3.stl" material_name="ur_dark"/>
+      <xacro:cad_visual link_name="link_3"/>
     </xacro:if>
     <xacro:unless value="${use_cad_visuals}">
       <visual>
@@ -232,7 +242,7 @@
           <box size="${forearm_body_length} ${forearm_body_width} ${forearm_body_height}"/>
         </geometry>
         <origin xyz="${forearm_x / 2.0} 0 ${forearm_z / 2.0}" rpy="0 ${forearm_visual_pitch} 0"/>
-        <material name="ur_dark"/>
+        <material name="ur_metal"/>
       </visual>
       <visual>
         <geometry>
@@ -260,7 +270,7 @@
 
   <link name="link_4">
     <xacro:if value="${use_cad_visuals}">
-      <xacro:mesh_visual mesh_name="link_4.stl" material_name="ur_dark"/>
+      <xacro:cad_visual link_name="link_4"/>
     </xacro:if>
     <xacro:unless value="${use_cad_visuals}">
       <visual>
@@ -289,7 +299,7 @@
 
   <link name="link_5">
     <xacro:if value="${use_cad_visuals}">
-      <xacro:mesh_visual mesh_name="link_5.stl" material_name="ur_dark"/>
+      <xacro:cad_visual link_name="link_5"/>
     </xacro:if>
     <xacro:unless value="${use_cad_visuals}">
       <visual>
@@ -318,7 +328,7 @@
 
   <link name="link_6">
     <xacro:if value="${use_cad_visuals}">
-      <xacro:mesh_visual mesh_name="link_6.stl" material_name="ur_dark"/>
+      <xacro:cad_visual link_name="link_6"/>
     </xacro:if>
     <xacro:unless value="${use_cad_visuals}">
       <visual>

@@ -3,6 +3,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+conda_prefix="$(realpath -m "${ARM_CONDA_PREFIX:-${ROOT_DIR}/.conda}")"
 workspace_dirs=(
   "${ROOT_DIR}/build"
   "${ROOT_DIR}/install"
@@ -24,11 +25,11 @@ echo "== Remove Python cache directories =="
 while IFS= read -r cache_dir; do
   echo "[remove] ${cache_dir}"
   rm -rf "${cache_dir}"
-done < <(find "${ROOT_DIR}" -type d -name "__pycache__" -print)
+done < <(find "${ROOT_DIR}" \( -path "${ROOT_DIR}/.conda" -o -path "${conda_prefix}" \) -prune -o -type d -name "__pycache__" -print)
 
 echo
 echo "== Remove Python cache files =="
 while IFS= read -r cache_file; do
   echo "[remove] ${cache_file}"
   rm -f "${cache_file}"
-done < <(find "${ROOT_DIR}" -type f \( -name "*.pyc" -o -name "*.pyo" \) -print)
+done < <(find "${ROOT_DIR}" \( -path "${ROOT_DIR}/.conda" -o -path "${conda_prefix}" \) -prune -o -type f \( -name "*.pyc" -o -name "*.pyo" \) -print)

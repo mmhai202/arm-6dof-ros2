@@ -15,6 +15,16 @@
     <joint name="joint_6" value="0.0"/>
   </group_state>
 
+  <!-- Bent elbow and wrist leave room for interactive TCP translation/rotation. -->
+  <group_state name="ready" group="arm">
+    <joint name="joint_1" value="0.0"/>
+    <joint name="joint_2" value="-1.0"/>
+    <joint name="joint_3" value="1.2"/>
+    <joint name="joint_4" value="-1.8"/>
+    <joint name="joint_5" value="1.0"/>
+    <joint name="joint_6" value="0.0"/>
+  </group_state>
+
   <group_state name="zero" group="arm">
     <joint name="joint_1" value="0.0"/>
     <joint name="joint_2" value="0.0"/>
@@ -31,6 +41,9 @@
   <disable_collisions link1="link_3" link2="link_4" reason="Adjacent"/>
   <disable_collisions link1="link_4" link2="link_5" reason="Adjacent"/>
   <disable_collisions link1="link_5" link2="link_6" reason="Adjacent"/>
+  <!-- flange is fixed to link_6; its simplified collision shape also touches
+       link_5 at the joint_6 interface, as part of the same wrist assembly. -->
+  <disable_collisions link1="link_5" link2="flange" reason="Adjacent"/>
   <disable_collisions link1="link_6" link2="flange" reason="Adjacent"/>
   <disable_collisions link1="flange" link2="tool0" reason="Adjacent"/>
   <disable_collisions link1="tool0" link2="tcp" reason="Adjacent"/>
