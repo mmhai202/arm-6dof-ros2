@@ -38,10 +38,11 @@ ARM_MOVEIT_DEPENDENCIES=(
   'ros-humble-moveit-ros-visualization'
   'ros-humble-moveit-simple-controller-manager'
 )
-ARM_EXTRA_DEPENDENCIES=(
+ARM_GAZEBO_DEPENDENCIES=(
   'gazebo=11.*'
   'ros-humble-gazebo-ros'
   'ros-humble-gazebo-ros2-control'
+  'ros-humble-gazebo-plugins'
 )
 
 ARM_ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -117,21 +118,14 @@ arm_activate_conda() {
 # Internal preflight shared by the installer, builder and launchers. Never installs.
 arm_check_dependencies() {
   local profile="$1" missing=0 command command_path compiler_var compiler compiler_path spec package
-  local -a commands=(python3 ros2 xacro) specs=("${ARM_BASE_DEPENDENCIES[@]}")
-  local -a modules=(numpy yaml rclpy ament_index_python launch launch_ros control_msgs sensor_msgs trajectory_msgs)
+  local -a commands=(python3 ros2 xacro gzserver)
+  local -a specs=("${ARM_BASE_DEPENDENCIES[@]}" "${ARM_MOVEIT_DEPENDENCIES[@]}" "${ARM_GAZEBO_DEPENDENCIES[@]}")
+  local -a modules=(numpy yaml rclpy ament_index_python launch launch_ros control_msgs sensor_msgs trajectory_msgs moveit_msgs)
   case "${profile}" in
-    moveit) specs+=("${ARM_MOVEIT_DEPENDENCIES[@]}"); modules+=(moveit_msgs) ;;
-    all)
-      commands+=(colcon cmake make ninja pkg-config)
-      specs+=("${ARM_MOVEIT_DEPENDENCIES[@]}")
-      modules+=(moveit_msgs)
-      ;;
+    gazebo) ;;
+    all) commands+=(colcon cmake make ninja pkg-config gazebo) ;;
     *) echo "[error] Unknown dependency profile: ${profile}" >&2; return 1 ;;
   esac
-  if [[ "${profile}" == all ]]; then
-    commands+=(gazebo)
-    specs+=("${ARM_EXTRA_DEPENDENCIES[@]}")
-  fi
   for command in "${commands[@]}"; do
     command_path="$(type -P "${command}" || true)"
     if [[ "${command_path}" != "${CONDA_PREFIX}/bin/"* ]]; then
@@ -256,7 +250,7 @@ arm_install_dependencies() {
   # Avoid the shell wrapper, which may reactivate the caller's environment.
   "${ARM_CONDA_EXE}" "${conda_action}" --yes --prefix "${ARM_CONDA_PREFIX}" \
     --override-channels --strict-channel-priority -c conda-forge -c robostack-humble \
-    "${ARM_BASE_DEPENDENCIES[@]}" "${ARM_MOVEIT_DEPENDENCIES[@]}" "${ARM_EXTRA_DEPENDENCIES[@]}"
+    "${ARM_BASE_DEPENDENCIES[@]}" "${ARM_MOVEIT_DEPENDENCIES[@]}" "${ARM_GAZEBO_DEPENDENCIES[@]}"
   arm_activate_conda
   arm_check_dependencies all
 
@@ -267,14 +261,19 @@ arm_install_dependencies() {
     "-DPython3_EXECUTABLE=${CONDA_PREFIX}/bin/python" \
     "-DPYTHON_EXECUTABLE=${CONDA_PREFIX}/bin/python" \
     -DPython3_FIND_STRATEGY=LOCATION -DPython_FIND_STRATEGY=LOCATION
-  echo "[ok] Workspace ready. Use run_moveit.sh."
+  echo "[ok] Workspace ready. Use run_moveit.sh (Gazebo physics + RViz)."
 }
 
 # Launchers source the helpers above; installation only happens on direct execution.
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   set -euo pipefail
+  if [[ $# -eq 1 && ( "$1" == -h || "$1" == --help ) ]]; then
+    echo "Usage: $0 [--help]"
+    echo "Install dependencies in ARM_CONDA_PREFIX (default: <workspace>/.conda) and build the workspace."
+    exit 0
+  fi
   if [[ $# -ne 0 ]]; then
-    echo "Usage: $0 (no arguments)" >&2
+    echo "Usage: $0 [--help]" >&2
     exit 1
   fi
   arm_install_dependencies

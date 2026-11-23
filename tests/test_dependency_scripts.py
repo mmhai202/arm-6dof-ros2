@@ -68,7 +68,7 @@ done
   fi
 }
 """)
-        for command in ("cmake", "make", "ninja", "pkg-config", "xacro", "gazebo", "cc", "c++"):
+        for command in ("cmake", "make", "ninja", "pkg-config", "xacro", "gazebo", "gzserver", "cc", "c++"):
             self.write_executable(self.prefix / "bin" / command, "#!/bin/bash\nexit 0\n")
         for command in ("python", "python3"):
             (self.prefix / "bin" / command).symlink_to("/usr/bin/python3")
@@ -209,6 +209,25 @@ echo '# mock workspace overlay' > install/setup.bash
                 self.run_script("install_dependencies.sh", argument, expected=1)
                 self.assertFalse(self.log.exists())
 
+    def test_help_needs_no_conda_and_preserves_workspace(self):
+        artifact = self.root / "build/keep.txt"
+        artifact.parent.mkdir()
+        artifact.touch()
+        self.env["CONDA_EXE"] = "/missing/conda"
+        for script in ("install_dependencies.sh", "run_moveit.sh", "clean_ws.sh"):
+            for flag in ("-h", "--help"):
+                with self.subTest(script=script, flag=flag):
+                    self.assertIn("Usage:", self.run_script(script, flag))
+                    self.assertFalse(self.log.exists())
+                    self.assertTrue(artifact.exists())
+
+    def test_cleanup_rejects_unknown_arguments_before_removing_files(self):
+        artifact = self.root / "build/keep.txt"
+        artifact.parent.mkdir()
+        artifact.touch()
+        self.run_script("clean_ws.sh", "--unknown", expected=1)
+        self.assertTrue(artifact.exists())
+
     def test_cleanup_preserves_conda_caches(self):
         env_cache = self.prefix / "lib/__pycache__/keep.pyc"
         project_cache = self.root / "src/__pycache__/remove.pyc"
@@ -238,7 +257,7 @@ echo '# mock workspace overlay' > install/setup.bash
     def test_launchers_only_launch_with_conda(self):
         self.prepare_workspace()
         for script, launch, option in (
-            ("run_moveit.sh", "arm_moveit_config moveit.launch.py", "use_moveit_rviz:=false"),
+            ("run_moveit.sh", "arm_moveit_config moveit.launch.py", "use_moveit_rviz:=true"),
         ):
             with self.subTest(script=script):
                 self.run_script(script, "--headless")
@@ -255,17 +274,44 @@ echo '# mock workspace overlay' > install/setup.bash
                 self.assertIn("install_dependencies.sh", output)
                 self.assertFalse(self.log.exists())
 
-    def test_moveit_shelf_modes_select_task_launch(self):
+    def test_launcher_pick_place_and_headless_are_independent(self):
         self.prepare_workspace()
-        for flag, mode in (("--pick-place", "execute"), ("--scene-only", "scene"),
-                           ("--plan-only", "plan")):
-            with self.subTest(flag=flag):
-                self.run_script("run_moveit.sh", "--headless", flag)
+        for options, launch, gazebo_gui in (
+            ((), "moveit.launch.py", "true"),
+            (("--headless",), "moveit.launch.py", "false"),
+            (("--pick-place",), "shelf_pick_place.launch.py", "true"),
+            (("--pick-place", "--headless"), "shelf_pick_place.launch.py", "false"),
+            (("--headless", "--pick-place"), "shelf_pick_place.launch.py", "false"),
+        ):
+            with self.subTest(options=options):
+                self.run_script("run_moveit.sh", *options)
                 calls = self.log.read_text()
-                self.assertIn("arm_moveit_config shelf_pick_place.launch.py", calls)
-                self.assertIn(f"task_mode:={mode}", calls)
-                self.assertIn("use_moveit_rviz:=false", calls)
+                self.assertIn(f"arm_moveit_config {launch}", calls)
+                if "--pick-place" in options:
+                    self.assertIn("task_mode:=execute", calls)
+                else:
+                    self.assertNotIn("task_mode:=", calls)
+                self.assertNotIn("use_gazebo:=", calls)
+                self.assertIn(f"use_gazebo_gui:={gazebo_gui}", calls)
+                self.assertIn("use_moveit_rviz:=true", calls)
+                self.assertNotIn("build ", calls)
+                self.assertNotIn("--yes", calls)
                 self.log.unlink()
+
+    def test_launcher_rejects_removed_and_unknown_flags_before_activation(self):
+        self.env["CONDA_EXE"] = "/missing/conda"
+        for flag in ("--gazebo-gui", "--scene-only", "--plan-only", "--unknown"):
+            with self.subTest(flag=flag):
+                output = self.run_script("run_moveit.sh", "--pick-place", "--headless", flag, expected=1)
+                self.assertIn(f"Unknown option: {flag}", output)
+                self.assertFalse(self.log.exists())
+
+    def test_gazebo_requires_its_control_plugin(self):
+        self.prepare_workspace()
+        self.env["MOCK_MISSING_PACKAGE"] = "gazebo_ros2_control"
+        output = self.run_script("run_moveit.sh", expected=1)
+        self.assertIn("[missing] gazebo_ros2_control", output)
+        self.assertNotIn("launch ", self.log.read_text())
 
     def test_launchers_report_missing_workspace_without_building(self):
         (self.prefix / "conda-meta").mkdir()
@@ -294,7 +340,7 @@ echo '# mock workspace overlay' > install/setup.bash
         self.assertIn("[missing] moveit_ros_move_group", output)
         self.assertNotIn("launch ", self.log.read_text())
 
-    def test_launchers_do_not_require_build_tools_or_gazebo(self):
+    def test_launchers_do_not_require_build_tools_or_gazebo_gui(self):
         self.prepare_workspace()
         for command in ("colcon", "cmake", "make", "ninja", "cc", "c++", "gazebo"):
             (self.prefix / "bin" / command).unlink()

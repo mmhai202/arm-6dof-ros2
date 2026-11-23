@@ -1,29 +1,19 @@
 """Collision geometry and task poses for a cabinet-to-floor-box task."""
 
 import math
-import xml.etree.ElementTree as ET
 
 from arm_description import GRIPPER_TOUCH_LINKS
-from arm_description.resources import load_yaml, package_file
+from arm_description.resources import load_yaml
 from geometry_msgs.msg import Point, Pose, Quaternion
 from moveit_msgs.msg import (
     AttachedCollisionObject, CollisionObject, ObjectColor, PlanningScene,
 )
 from shape_msgs.msg import SolidPrimitive
 from std_msgs.msg import ColorRGBA, Header
-import xacro
 
 
 OBJECT_ID = "shelf_payload"
 TOUCH_LINKS = list(GRIPPER_TOUCH_LINKS)
-
-
-def position_limits():
-    root = ET.fromstring(xacro.process_file(str(package_file(
-        "arm_description", "urdf/arm.urdf.xacro"))).toxml())
-    return {joint.get("name"): (float(joint.find("limit").get("lower")),
-                                float(joint.find("limit").get("upper")))
-            for joint in root.findall("joint") if joint.get("type") == "revolute"}
 
 
 def pose(x, y, z, *, down=False):

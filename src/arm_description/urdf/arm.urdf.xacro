@@ -1,8 +1,5 @@
 <?xml version="1.0"?>
 <robot name="arm_sim" xmlns:xacro="http://www.ros.org/wiki/xacro">
-  <xacro:arg name="ros2_control_plugin" default="mock_components/GenericSystem"/>
-  <xacro:arg name="ros2_control_system_name" default="ArmFakeSystem"/>
-  <xacro:arg name="use_gazebo" default="false"/>
   <xacro:arg name="gazebo_controller_config" default=""/>
   <xacro:arg name="visual_mode" default="cad"/>
   <xacro:arg name="collision_mode" default="simple"/>
@@ -74,10 +71,10 @@
   <xacro:property name="cad_mesh_root" value="package://arm_description/meshes/ur7e"/>
   <xacro:property name="cad_mesh_scale" value="1 1 1"/>
 
-  <xacro:macro name="box_inertial" params="mass x y z origin_x:=0.0 origin_y:=0.0 origin_z:=0.0">
+  <xacro:macro name="box_inertial" params="mass x y z origin_x:=0.0 origin_y:=0.0 origin_z:=0.0 rpy:='0 0 0'">
     <inertial>
       <mass value="${mass}"/>
-      <origin xyz="${origin_x} ${origin_y} ${origin_z}" rpy="0 0 0"/>
+      <origin xyz="${origin_x} ${origin_y} ${origin_z}" rpy="${rpy}"/>
       <inertia ixx="${mass * (y * y + z * z) / 12.0}"
                ixy="0.0"
                ixz="0.0"
@@ -137,6 +134,12 @@
   </material>
 
   <link name="base_footprint"/>
+
+  <!-- Bolt the base to the world; marking the whole model static disables joints. -->
+  <link name="world"/>
+  <joint name="world_to_base" type="fixed">
+    <parent link="world"/><child link="base_footprint"/>
+  </joint>
 
   <link name="base_link">
     <xacro:if value="${use_cad_visuals}">
@@ -265,7 +268,7 @@
       </geometry>
       <origin xyz="${forearm_x / 2.0} 0 ${forearm_z / 2.0}" rpy="0 ${forearm_visual_pitch} 0"/>
     </collision>
-    <xacro:box_inertial mass="2.846" x="${forearm_visual_length}" y="0.078" z="0.088" origin_x="${forearm_x / 2.0}" origin_z="${forearm_z / 2.0}"/>
+    <xacro:box_inertial mass="2.846" x="${forearm_visual_length}" y="0.078" z="0.088" origin_x="${forearm_x / 2.0}" origin_z="${forearm_z / 2.0}" rpy="0 ${forearm_visual_pitch} 0"/>
   </link>
 
   <link name="link_4">
@@ -416,7 +419,8 @@
         <geometry><box size="0.001 0.024 0.025"/></geometry>
         <material name="ur_black"/>
       </visual>
-      <collision>
+      <!-- The URDF-to-SDF converter appends _collision to this name. -->
+      <collision name="finger_${side}">
         <origin xyz="0 0 0.055"/>
         <geometry><box size="0.008 0.024 0.080"/></geometry>
       </collision>
@@ -429,6 +433,22 @@
       <limit lower="0.0" upper="0.025" effort="30" velocity="0.08"/>
       <dynamics damping="0.1" friction="0.05"/>
     </joint>
+    <gazebo reference="finger_${side}">
+      <mu1>2.0</mu1><mu2>2.0</mu2>
+      <kp>100000</kp><kd>100</kd>
+      <minDepth>0.001</minDepth><maxVel>0.1</maxVel>
+      <sensor name="finger_${side}_contact" type="contact">
+        <always_on>true</always_on><update_rate>100</update_rate>
+        <contact><collision>finger_${side}_collision</collision></contact>
+        <plugin name="finger_${side}_bumper" filename="libgazebo_ros_bumper.so">
+          <ros>
+            <namespace>/gripper</namespace>
+            <remapping>bumper_states:=${side}_contacts</remapping>
+          </ros>
+          <frame_name>world</frame_name>
+        </plugin>
+      </sensor>
+    </gazebo>
   </xacro:macro>
   <xacro:gripper_finger side="left" sign="1"/>
   <xacro:gripper_finger side="right" sign="-1"/>
@@ -513,57 +533,34 @@
     <origin xyz="0 0 ${tool_length}" rpy="0 0 0"/>
   </joint>
 
-  <xacro:if value="$(arg use_gazebo)">
-    <gazebo>
-      <plugin filename="libgazebo_ros2_control.so" name="gazebo_ros2_control">
-        <parameters>$(arg gazebo_controller_config)</parameters>
-      </plugin>
-    </gazebo>
-  </xacro:if>
+  <gazebo>
+    <plugin filename="libgazebo_ros2_control.so" name="gazebo_ros2_control">
+      <parameters>$(arg gazebo_controller_config)</parameters>
+    </plugin>
+  </gazebo>
 
-  <ros2_control name="$(arg ros2_control_system_name)" type="system">
+  <ros2_control name="ArmGazeboSystem" type="system">
     <hardware>
-      <plugin>$(arg ros2_control_plugin)</plugin>
+      <plugin>gazebo_ros2_control/GazeboSystem</plugin>
     </hardware>
 
-    <joint name="joint_1">
-      <command_interface name="position"/>
-      <state_interface name="position"><param name="initial_value">0.0</param></state_interface>
-      <state_interface name="velocity"/>
-    </joint>
-    <joint name="joint_2">
-      <command_interface name="position"/>
-      <state_interface name="position"><param name="initial_value">${-PI_CONST / 2.0}</param></state_interface>
-      <state_interface name="velocity"/>
-    </joint>
-    <joint name="joint_3">
-      <command_interface name="position"/>
-      <state_interface name="position"><param name="initial_value">0.0</param></state_interface>
-      <state_interface name="velocity"/>
-    </joint>
-    <joint name="joint_4">
-      <command_interface name="position"/>
-      <state_interface name="position"><param name="initial_value">${-PI_CONST / 2.0}</param></state_interface>
-      <state_interface name="velocity"/>
-    </joint>
-    <joint name="joint_5">
-      <command_interface name="position"/>
-      <state_interface name="position"><param name="initial_value">0.0</param></state_interface>
-      <state_interface name="velocity"/>
-    </joint>
-    <joint name="joint_6">
-      <command_interface name="position"/>
-      <state_interface name="position"><param name="initial_value">0.0</param></state_interface>
-      <state_interface name="velocity"/>
-    </joint>
-    <xacro:macro name="gripper_control_joint" params="side">
-      <joint name="finger_${side}_joint">
-        <command_interface name="position"/>
-        <state_interface name="position"><param name="initial_value">0.025</param></state_interface>
+    <xacro:macro name="control_joint" params="name initial effort">
+      <joint name="${name}">
+        <command_interface name="effort">
+          <param name="min">${-effort}</param><param name="max">${effort}</param>
+        </command_interface>
+        <state_interface name="position"><param name="initial_value">${initial}</param></state_interface>
         <state_interface name="velocity"/>
+        <state_interface name="effort"/>
       </joint>
     </xacro:macro>
-    <xacro:gripper_control_joint side="left"/>
-    <xacro:gripper_control_joint side="right"/>
+    <xacro:control_joint name="joint_1" initial="0.0" effort="150"/>
+    <xacro:control_joint name="joint_2" initial="${-PI_CONST / 2.0}" effort="150"/>
+    <xacro:control_joint name="joint_3" initial="0.0" effort="150"/>
+    <xacro:control_joint name="joint_4" initial="${-PI_CONST / 2.0}" effort="28"/>
+    <xacro:control_joint name="joint_5" initial="0.0" effort="28"/>
+    <xacro:control_joint name="joint_6" initial="0.0" effort="28"/>
+    <xacro:control_joint name="finger_left_joint" initial="0.025" effort="30"/>
+    <xacro:control_joint name="finger_right_joint" initial="0.025" effort="30"/>
   </ros2_control>
 </robot>

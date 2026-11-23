@@ -112,7 +112,7 @@ class RobotModel:
             current = joint.find("parent").get("link")
         return cls(limits, tuple(reversed(chain)))
 
-    def tcp_position(self, positions) -> TcpPosition:
+    def tcp_transform(self, positions) -> np.ndarray:
         angles = dict(zip(JOINT_NAMES, positions))
         transform = np.eye(4)
         for joint in self.chain:
@@ -121,4 +121,7 @@ class RobotModel:
                 transform[:3, :3] = (
                     transform[:3, :3] @ axis_rotation(joint.axis, angles[joint.name])
                 )
-        return TcpPosition(*(float(value) for value in transform[:3, 3]))
+        return transform
+
+    def tcp_position(self, positions) -> TcpPosition:
+        return TcpPosition(*(float(value) for value in self.tcp_transform(positions)[:3, 3]))

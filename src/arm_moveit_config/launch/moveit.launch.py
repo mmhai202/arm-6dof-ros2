@@ -15,6 +15,7 @@ PACKAGE = "arm_moveit_config"
 
 
 def generate_launch_description():
+    sim_time = {"use_sim_time": True}
     model_parameters = [
         robot_description(),
         {"robot_description_semantic": package_file(PACKAGE, "config/arm.srdf").read_text(
@@ -59,9 +60,12 @@ def generate_launch_description():
         package="rviz2", executable="rviz2", output="screen",
         arguments=["-d", LaunchConfiguration("rviz_config")],
         condition=IfCondition(LaunchConfiguration("use_moveit_rviz")),
-        parameters=model_parameters,
+        parameters=[*model_parameters, sim_time],
     )
     return LaunchDescription([
+        DeclareLaunchArgument("use_gazebo_gui", default_value="false"),
+        DeclareLaunchArgument("gazebo_verbose", default_value="false"),
+        DeclareLaunchArgument("world", default_value=str(package_file("arm_bringup", "worlds/arm.world"))),
         DeclareLaunchArgument(
             "use_moveit_rviz", default_value="true", description="Enable MoveIt RViz.",
         ),
@@ -78,11 +82,12 @@ def generate_launch_description():
         ),
         *robot_arguments(),
         IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                str(package_file("arm_bringup", "launch/view_arm.launch.py"))
-            ),
+            PythonLaunchDescriptionSource(str(package_file("arm_bringup", "launch/gazebo_arm.launch.py"))),
             launch_arguments={
                 "use_rviz": "false",
+                "use_gazebo_gui": LaunchConfiguration("use_gazebo_gui"),
+                "gazebo_verbose": LaunchConfiguration("gazebo_verbose"),
+                "world": LaunchConfiguration("world"),
                 "auto_home": LaunchConfiguration("auto_home"),
                 "initial_pose": LaunchConfiguration("initial_pose"),
                 **{name: LaunchConfiguration(name) for name in ROBOT_ARGUMENTS},
@@ -92,7 +97,7 @@ def generate_launch_description():
             package="moveit_ros_move_group", executable="move_group", output="screen",
             parameters=[
                 *model_parameters, ompl, load_yaml(PACKAGE, "config/moveit_controllers.yaml"),
-                execution, scene_monitor,
+                execution, scene_monitor, sim_time,
             ],
         ),
         TimerAction(period=2.0, actions=[rviz]),

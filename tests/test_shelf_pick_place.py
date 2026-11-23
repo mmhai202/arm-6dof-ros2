@@ -8,7 +8,7 @@ from unittest.mock import Mock
 import xml.etree.ElementTree as ET
 
 try:
-    from arm_moveit_config.shelf_scene import OBJECT_ID, ShelfScene, position_limits
+    from arm_moveit_config.shelf_scene import OBJECT_ID, ShelfScene
     from arm_moveit_config.shelf_task import ShelfTask, ensure_timing, nearest_angle, updated_state
     from moveit_msgs.msg import (
         AllowedCollisionEntry, AllowedCollisionMatrix, CollisionObject,
@@ -101,7 +101,7 @@ class ShelfSceneTest(unittest.TestCase):
             grasp = next(p for name, _, p in self.scene.stages() if name == "grasp")
             self.assertGreater(grasp.position.z - tip_z, self.scene.config["shelf"]["surface_z"])
             hardware = root.find(f"ros2_control/joint[@name='finger_{side}_joint']")
-            self.assertIsNotNone(hardware.find("command_interface[@name='position']"))
+            self.assertIsNotNone(hardware.find("command_interface[@name='effort']"))
 
     def test_gripper_mount_is_concentric_with_actual_cad_face(self):
         raw = package_file("arm_description", "meshes/ur7e/link_6.stl").read_bytes()
@@ -173,7 +173,7 @@ class TaskFailureTest(unittest.TestCase):
         trajectory = RobotTrajectory(joint_trajectory=JointTrajectory(
             joint_names=list(JOINT_NAMES), points=[JointTrajectoryPoint(positions=[0.1] * 6)]))
         task = SimpleNamespace(
-            scene=ShelfScene(), position_limits=position_limits(), call=Mock(return_value=SimpleNamespace(
+            scene=ShelfScene(), model=RobotModel.load(), call=Mock(return_value=SimpleNamespace(
                 error_code=MoveItErrorCodes(val=MoveItErrorCodes.SUCCESS), solution=state)),
             plan_motion=Mock(side_effect=[trajectory, trajectory, RuntimeError("blocked"),
                                          trajectory, trajectory, trajectory]),
@@ -186,7 +186,7 @@ class TaskFailureTest(unittest.TestCase):
                          ["cartesian", "cartesian", "ompl"] * 2)
 
     def test_equivalent_ik_angles_stay_near_current_state_within_urdf_limits(self):
-        limits = position_limits()
+        limits = RobotModel.load().limits
         self.assertAlmostEqual(nearest_angle(-6.0, 0.0, limits["joint_1"]), 2 * math.pi - 6)
         self.assertEqual(nearest_angle(-3.0, 3.0, limits["joint_3"]), -3.0)
 

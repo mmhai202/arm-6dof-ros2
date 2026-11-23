@@ -4,6 +4,7 @@ planner_configs:
     range: 0.0
 
 arm:
+  longest_valid_segment_fraction: 0.005
   planner_configs:
     - RRTConnect
 

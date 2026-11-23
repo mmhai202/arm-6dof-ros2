@@ -1,44 +1,39 @@
 # arm-simulation
 
-6-DOF arm simulation with ROS 2 Humble, RViz and fake hardware.
+6-DOF arm simulation with ROS 2 Humble, Gazebo, MoveIt and RViz.
 
 ## Setup and run
 
 Requires Miniforge/Miniconda with `conda` on `PATH`. Run from the workspace root:
 
 ```bash
-./scripts/install_dependencies.sh  # Install all dependencies in .conda/ and build
+./scripts/install_dependencies.sh  # Install dependencies in .conda/ and build
+./scripts/run_moveit.sh                        # Open Gazebo and RViz
+./scripts/run_moveit.sh --headless             # Gazebo in the background; RViz stays open
+./scripts/run_moveit.sh --pick-place           # Pick from shelf and place in floor box
+./scripts/run_moveit.sh --pick-place --headless
 ```
 
-Start MoveIt:
+The robot starts at `home`. In RViz, drag the goal and use **Plan & Execute**.
+Press Ctrl+C to stop. All scripts support `--help`.
 
-```bash
-./scripts/run_moveit.sh # MoveIt: drag the goal in RViz, then Plan & Execute
-```
+Rerun the installer after source changes or cleanup. Keep the Conda environment
+separate from `/opt/ros`; use `ARM_CONDA_PREFIX` to override `.conda/`.
 
-Fake hardware starts upright at `home`, including in `--scene-only` mode.
-The MoveIt launcher supports `--headless`.
-Run scripts only check and launch. Missing dependencies or build artifacts are reported.
-Rerun the installer after source changes or cleanup.
-
-Keep this Conda environment separate from `/opt/ros`.
-
-## Demo: pick from a cabinet shelf into a floor box
-
-```bash
-colcon build --packages-select arm_moveit_config --symlink-install  # Rebuild in the activated environment
-./scripts/run_moveit.sh --pick-place             # Pick from shelf and place in floor box
-./scripts/run_moveit.sh --scene-only             # Show scene only
-./scripts/run_moveit.sh --plan-only              # Plan without moving
-./scripts/run_moveit.sh --pick-place --headless  # Run without RViz
-ros2 run arm_moveit_config shelf_pick_place.py --mode execute  # Repeat in an active MoveIt session
-```
+Demo settings: [shelf_pick_place.yaml](src/arm_moveit_config/config/shelf_pick_place.yaml).
 
 ![Robot simulation demo](tests/demo.gif)
 
 ## Cleanup and tests
 
 ```bash
-./scripts/clean_ws.sh                       # Remove build artifacts; keep .conda/
-python3 -m unittest discover -s tests -v     # With environment and workspace sourced
+source scripts/install_dependencies.sh  # Load helpers only
+arm_activate_conda
+source install/setup.bash
+python3 -m unittest discover -s tests -v
+./scripts/clean_ws.sh  # Remove build/, install/, log/ and Python caches; keep .conda/
 ```
+
+Integration tests require a disposable simulation with the same `ROS_DOMAIN_ID`.
+Enable with `ARM_RUN_MOVEIT_TESTS=1`, `ARM_RUN_GAZEBO_TESTS=1`, or
+`ARM_RUN_GAZEBO_GRASP_TESTS=1`; grasp tests need a session without `--pick-place`.

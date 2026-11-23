@@ -1,5 +1,4 @@
-# Metres, in base_footprint. Robot base and box bottom are on z=0.
-# Cabinet opens toward -X, with enough headroom for a top-down grasp.
+# A 60 mm payload leaves room to squeeze before the gripper's 40 mm mechanical stop.
 frame: base_footprint
 shelf:
   center_xy: [0.52, 0.25]
@@ -8,7 +7,7 @@ shelf:
   top_z: 0.95
   thickness: 0.02
 object:
-  size: [0.04, 0.04, 0.04]
+  size: [0.06, 0.04, 0.04]
   center_xy: [0.43, 0.25]
 box:
   center_xy: [0.40, -0.35]
@@ -22,8 +21,17 @@ motion:
   lift: 0.14
   withdraw_clearance: 0.30
   transfer_z: 0.55
-  place_clearance: 0.005
+  place_clearance: 0.025
   velocity_scale: 0.50
   acceleration_scale: 0.50
   cartesian_step: 0.005
   planning_time: 10.0
+physics:
+  mass: 0.10
+  # Match the finger surfaces; ODE uses the lower coefficient of the contact pair.
+  friction: 2.0
+  grip_compression: 0.006
+  min_contact_force: 0.2
+  max_grasp_drift: 0.018
+  contact_timeout: 0.5
+  settle_time: 1.5

@@ -9,11 +9,39 @@ try:
     from arm_description.resources import package_file
     from arm_description import JOINT_NAMES
     import xacro
+    import numpy as np
 except ImportError as exc:
     raise unittest.SkipTest("Activate Conda and source install/setup.bash") from exc
 
 
 class RobotModelTest(unittest.TestCase):
+    def test_physics_inertias_are_valid(self):
+        root = ET.fromstring(xacro.process_file(str(package_file(
+            "arm_description", "urdf/arm.urdf.xacro"))).toxml())
+        for link in root.findall("link"):
+            if link.find("collision") is None:
+                continue
+            with self.subTest(link=link.get("name")):
+                inertia = link.find("inertial")
+                self.assertIsNotNone(inertia)
+                self.assertGreater(float(inertia.find("mass").get("value")), 0)
+                values = {key: float(value) for key, value in inertia.find("inertia").attrib.items()}
+                matrix = np.array([[values["ixx"], values["ixy"], values["ixz"]],
+                                   [values["ixy"], values["iyy"], values["iyz"]],
+                                   [values["ixz"], values["iyz"], values["izz"]]])
+                moments = np.linalg.eigvalsh(matrix)
+                self.assertTrue(np.all(moments > 0))
+                self.assertLessEqual(moments[-1], moments[0] + moments[1] + 1e-10)
+
+    def test_robot_uses_only_gazebo_effort_hardware(self):
+        root = ET.fromstring(xacro.process_file(str(package_file(
+            "arm_description", "urdf/arm.urdf.xacro"))).toxml())
+        self.assertEqual(root.findtext("ros2_control/hardware/plugin"), "gazebo_ros2_control/GazeboSystem")
+        self.assertIsNotNone(root.find("joint[@name='world_to_base']"))
+        for joint in root.findall("ros2_control/joint"):
+            self.assertEqual([item.get("name") for item in joint.findall("command_interface")], ["effort"])
+        self.assertIsNotNone(root.find("gazebo/plugin[@name='gazebo_ros2_control']"))
+
     def test_hardware_starts_at_home(self):
         root = ET.fromstring(xacro.process_file(str(package_file(
             "arm_description", "urdf/arm.urdf.xacro"))).toxml())

@@ -12,10 +12,10 @@ from trajectory_msgs.msg import JointTrajectoryPoint
 ACTION_NAME = "/arm_controller/follow_joint_trajectory"
 
 
-def trajectory_goal(waypoints):
+def trajectory_goal(waypoints, *, joint_names=JOINT_NAMES):
     """Convert (positions, seconds_from_start) pairs into a controller goal."""
     goal = FollowJointTrajectory.Goal()
-    goal.trajectory.joint_names = list(JOINT_NAMES)
+    goal.trajectory.joint_names = list(joint_names)
     for positions, seconds in waypoints:
         sec, nanosec = divmod(round(seconds * 1_000_000_000), 1_000_000_000)
         goal.trajectory.points.append(JointTrajectoryPoint(

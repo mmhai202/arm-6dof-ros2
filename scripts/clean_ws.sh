@@ -2,6 +2,16 @@
 
 set -euo pipefail
 
+if [[ $# -eq 1 && ( "$1" == -h || "$1" == --help ) ]]; then
+  echo "Usage: $0 [--help]"
+  echo "Remove build/, install/, log/ and Python caches; preserve the Conda environment."
+  exit 0
+fi
+if [[ $# -ne 0 ]]; then
+  echo "Usage: $0 [--help]" >&2
+  exit 1
+fi
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 conda_prefix="$(realpath -m "${ARM_CONDA_PREFIX:-${ROOT_DIR}/.conda}")"
 workspace_dirs=(
