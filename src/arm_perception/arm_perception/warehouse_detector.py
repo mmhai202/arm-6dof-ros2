@@ -1,17 +1,66 @@
 """Image-derived multi-object poses for the factory picking deck."""
 
+from collections import Counter
 import json
 
 import cv2
 from cv_bridge import CvBridgeError
 import numpy as np
 import rclpy
+from rclpy.clock import Clock, ClockType
 from rclpy.time import Time
 from std_msgs.msg import String
 from tf2_ros import TransformException
 
 from .detector import RGBDDetector
 from .geometry import locate_cuboid, transform_matrix
+
+
+def draw_stock_overlay(image, objects, frame, *, unavailable=False):
+    """Annotate a preview copy; labels identify detections in this frame only."""
+    height, width = image.shape[:2]
+    scale = width / 320
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    background = (18, 24, 30)
+    foreground = (240, 245, 250)
+    colors = {"red": (255, 115, 115), "blue": (115, 190, 255),
+              "green": (115, 245, 155)}
+
+    def text(value, x, y, color=foreground):
+        cv2.putText(image, value, (int(x), int(y)), font, 0.32 * scale,
+                    color, max(1, round(scale)), cv2.LINE_AA)
+
+    cv2.rectangle(image, (0, 0), (width - 1, round(18 * scale)), background, -1)
+    counts = Counter(item["color"] for item in objects)
+    if unavailable:
+        text("DETECTION UNAVAILABLE", 5 * scale, 12 * scale, (255, 200, 100))
+        return
+    text(f"DETECTED {len(objects)} | RED {counts['red']}  BLUE {counts['blue']}  GREEN {counts['green']}",
+         5 * scale, 12 * scale)
+    if not objects:
+        return
+
+    row_height = 12 * scale
+    rows = (len(objects) + 1) // 2
+    footer = max(19 * scale, height - (rows + 1) * row_height - 4 * scale)
+    cv2.rectangle(image, (0, int(footer)), (width - 1, height - 1), background, -1)
+    text(f"XYZ (mm) / {frame}", 5 * scale, footer + 10 * scale)
+    seen = Counter()
+    for index, item in enumerate(objects):
+        color = colors.get(item["color"], foreground)
+        seen[item["color"]] += 1
+        label = f"{item['color'][0].upper()}{seen[item['color']]}"
+        x1, y1, x2, y2 = item["bounds"]
+        cv2.rectangle(image, (x1, y1), (x2, y2), color, max(1, round(scale)))
+        label_width = cv2.getTextSize(label, font, 0.32 * scale, 1)[0][0]
+        x = max(0, min(x1, width - label_width - round(4 * scale)))
+        y = max(round(29 * scale), y1 - round(3 * scale))
+        cv2.rectangle(image, (x, y - round(10 * scale)),
+                      (x + label_width + round(3 * scale), y + round(2 * scale)), background, -1)
+        text(label, x + scale, y, color)
+        xyz = " ".join(str(round(value * 1000)) for value in item["center"])
+        text(f"{label}  {xyz}", (5 + (index % 2) * 160) * scale,
+             footer + (22 + (index // 2) * 12) * scale, color)
 
 
 def locate_stock(rgb, depth, intrinsics, camera_to_base, config):
@@ -58,10 +107,23 @@ def locate_stock(rgb, depth, intrinsics, camera_to_base, config):
 class WarehouseDetector(RGBDDetector):
     def __init__(self):
         super().__init__()
+        # Small frame operations should not compete with physics for CPU workers.
+        cv2.setNumThreads(1)
         self.stock_pub = self.create_publisher(String, "/warehouse/detections", 10)
+        self.preview_image = None
+        # Keep only the newest frame and cap the preview at 10 Hz of wall time.
+        self.preview_timer = self.create_timer(
+            0.1, self.publish_preview, clock=Clock(clock_type=ClockType.STEADY_TIME))
+
+    def publish_preview(self):
+        if self.preview_image is not None:
+            self.image_pub.publish(self.preview_image)
+            self.preview_image = None
 
     def on_images(self, rgb_msg, depth_msg):
         debug = None
+        objects = []
+        unavailable = False
         try:
             if self.info is None:
                 raise ValueError("Waiting for CameraInfo.")
@@ -84,14 +146,15 @@ class WarehouseDetector(RGBDDetector):
             stamp = rgb_msg.header.stamp.sec + rgb_msg.header.stamp.nanosec / 1e9
             self.stock_pub.publish(String(data=json.dumps({
                 "frame": self.config["frame"], "stamp": stamp, "objects": objects})))
-            for item in objects:
-                x1, y1, x2, y2 = item["bounds"]
-                cv2.rectangle(debug, (x1, y1), (x2, y2), (240, 255, 255), 1)
             self.status_pub.publish(String(data=json.dumps({"detected": bool(objects), "count": len(objects)})))
         except (ValueError, TransformException, cv2.error, CvBridgeError) as error:
+            unavailable = True
             self.status_pub.publish(String(data=json.dumps({"detected": False, "reason": str(error)})))
         if debug is not None:
-            self.image_pub.publish(self.bridge.cv2_to_imgmsg(debug, encoding="rgb8"))
+            draw_stock_overlay(debug, objects, self.config["frame"], unavailable=unavailable)
+            image = self.bridge.cv2_to_imgmsg(debug, encoding="rgb8")
+            image.header = rgb_msg.header
+            self.preview_image = image
 
 
 def main():

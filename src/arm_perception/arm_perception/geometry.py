@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 import cv2
 import numpy as np
 
-from .mounting import camera_fixtures
+from .mounting import camera_details, camera_fixtures
 
 
 def quaternion_from_rpy(roll, pitch, yaw):
@@ -59,6 +59,19 @@ def camera_sdf(config):
                 color = " ".join(map(str, [*fixture["color"], 1.0]))
                 ET.SubElement(material, "ambient").text = color
                 ET.SubElement(material, "diffuse").text = color
+    for part in camera_details():
+        visual = ET.SubElement(link, "visual", name=part["name"])
+        ET.SubElement(visual, "pose").text = " ".join(map(str, [*part["center"], *part["rpy"]]))
+        shape = ET.SubElement(ET.SubElement(visual, "geometry"), part["shape"])
+        if part["shape"] == "cylinder":
+            ET.SubElement(shape, "radius").text = str(part["size"][0] / 2)
+            ET.SubElement(shape, "length").text = str(part["size"][2])
+        else:
+            ET.SubElement(shape, "size").text = " ".join(map(str, part["size"]))
+        material = ET.SubElement(visual, "material")
+        color = " ".join(map(str, [*part["color"], 1.0]))
+        ET.SubElement(material, "ambient").text = color
+        ET.SubElement(material, "diffuse").text = color
     sensor = ET.SubElement(link, "sensor", name="rgbd", type="depth")
     ET.SubElement(sensor, "always_on").text = "true"
     ET.SubElement(sensor, "update_rate").text = str(camera["update_rate"])

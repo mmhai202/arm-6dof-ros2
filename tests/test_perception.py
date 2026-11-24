@@ -11,11 +11,47 @@ import xml.etree.ElementTree as ET
 import numpy as np
 from arm_description.resources import load_yaml
 from arm_perception.geometry import camera_sdf, locate_cuboid, quaternion_from_rpy, transform_matrix
+from arm_perception.detector import RGBDDetector
 from arm_perception.mounting import camera_fixtures
+from arm_perception.visualization import camera_markers
 from arm_moveit_config.gazebo_task import GazeboShelfTask
 from arm_moveit_config.perception_input import DetectionWindow, sample_spawn_center
 from arm_moveit_config.shelf_scene import ShelfScene
 from geometry_msgs.msg import PoseStamped
+from builtin_interfaces.msg import Time
+
+
+class CameraVisualRecoveryTest(unittest.TestCase):
+    def test_camera_markers_recover_after_reset_without_respawning(self):
+        detector = SimpleNamespace(
+            config=load_yaml("arm_perception", "config/camera.yaml"), camera_visuals=None,
+            camera_marker_pub=Mock(), spawn_timer=Mock(), static_tf=Mock(),
+            get_clock=lambda: SimpleNamespace(now=lambda: SimpleNamespace(to_msg=lambda: Time(sec=12))),
+            get_logger=Mock(), status_pub=Mock(), spawn_client=Mock())
+        detector.publish_camera_markers = lambda: RGBDDetector.publish_camera_markers(detector)
+        detector.publish_camera_markers()
+        detector.camera_marker_pub.publish.assert_not_called()
+        future = SimpleNamespace(result=lambda: SimpleNamespace(success=True))
+        RGBDDetector.camera_ready(detector, future)
+        expected = camera_markers(detector.config)
+        self.assertEqual(detector.camera_marker_pub.publish.call_args.args[0], expected)
+        detector.camera_marker_pub.publish.reset_mock()
+        for _ in range(2):
+            # The periodic callback must resend even with no new image/clock data.
+            detector.publish_camera_markers()
+            self.assertEqual(detector.camera_marker_pub.publish.call_args.args[0], expected)
+        self.assertEqual(detector.camera_marker_pub.publish.call_count, 2)
+        detector.static_tf.sendTransform.assert_called_once()
+        detector.spawn_client.call_async.assert_not_called()
+
+    def test_failed_camera_spawn_does_not_publish_visuals(self):
+        detector = SimpleNamespace(spawn_timer=Mock(), camera_visuals=None,
+                                   camera_marker_pub=Mock(), get_logger=Mock(), status_pub=Mock())
+        future = SimpleNamespace(result=lambda: SimpleNamespace(success=False, status_message="unavailable"))
+        RGBDDetector.camera_ready(detector, future)
+        RGBDDetector.publish_camera_markers(detector)
+        self.assertIsNone(detector.camera_visuals)
+        detector.camera_marker_pub.publish.assert_not_called()
 
 
 class RGBDGeometryTest(unittest.TestCase):

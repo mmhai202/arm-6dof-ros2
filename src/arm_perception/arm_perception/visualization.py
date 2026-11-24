@@ -6,7 +6,7 @@ from geometry_msgs.msg import Point
 from visualization_msgs.msg import Marker, MarkerArray
 
 from .geometry import quaternion_from_rpy
-from .mounting import camera_fixtures
+from .mounting import camera_details, camera_fixtures
 
 
 def camera_markers(config):
@@ -28,13 +28,17 @@ def camera_markers(config):
         body.scale.x, body.scale.y, body.scale.z = map(float, fixture["size"])
         body.color.r, body.color.g, body.color.b = map(float, fixture["color"])
 
-    for side, y in (("left", -0.026), ("right", 0.026)):
-        lens = marker(f"camera_lens_{side}", Marker.CYLINDER)
-        lens.pose.position.x, lens.pose.position.y = -0.003, y
-        q = lens.pose.orientation
-        q.x, q.y, q.z, q.w = quaternion_from_rpy(0, math.pi/2, 0)
-        lens.scale.x, lens.scale.y, lens.scale.z = 0.022, 0.022, 0.016
-        lens.color.r, lens.color.g, lens.color.b = 0.05, 0.65, 0.95
+    for part in camera_details():
+        detail = marker(part["name"], Marker.CYLINDER if part["shape"] == "cylinder" else Marker.CUBE)
+        p, q = detail.pose.position, detail.pose.orientation
+        p.x, p.y, p.z = part["center"]
+        q.x, q.y, q.z, q.w = quaternion_from_rpy(*part["rpy"])
+        detail.scale.x, detail.scale.y, detail.scale.z = part["size"]
+        detail.color.r, detail.color.g, detail.color.b = part["color"]
+
+    # Remove the old stereo-style lenses if RViz remains open during a restart.
+    for side in ("left", "right"):
+        marker(f"camera_lens_{side}", Marker.CYLINDER).action = Marker.DELETE
 
     # Draw the first 60 cm of the viewing volume so it stays readable around
     # the shelf. The sensor's full near/far clipping range remains unchanged.

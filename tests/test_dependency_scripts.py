@@ -3,8 +3,10 @@
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import tempfile
+import time
 import unittest
 
 
@@ -237,6 +239,74 @@ echo '# mock workspace overlay' > install/setup.bash
         self.run_script("clean_ws.sh")
         self.assertTrue(env_cache.exists())
         self.assertFalse(project_cache.exists())
+
+    def start_cleanup_worker(self, *, outside=False, stubborn=False, child=False):
+        path = (Path(self.temp.name) / "other-workspace" if outside else self.root) / "src/worker.py"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("""import signal
+import subprocess
+import sys
+import time
+""" + ("signal.signal(signal.SIGINT, signal.SIG_IGN)\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+       if stubborn else "") + ("""child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])
+print(child.pid, flush=True)
+try:
+    time.sleep(120)
+except KeyboardInterrupt:
+    child.wait(timeout=3)
+""" if child else "print('ready', flush=True)\ntry:\n    time.sleep(120)\nexcept KeyboardInterrupt:\n    pass\n"))
+        environment = dict(self.env)
+        if outside:
+            environment["AMENT_PREFIX_PATH"] = str(path.parent.parent / "install")
+        process = subprocess.Popen(
+            ["/usr/bin/python3", "-u", str(path)], cwd=self.temp.name, env=environment,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+
+        def stop():
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait(timeout=5)
+            process.stdout.close()
+            process.stderr.close()
+
+        self.addCleanup(stop)
+        ready = process.stdout.readline().strip()
+        self.assertTrue(ready, process.stderr.read() if process.poll() is not None else "Worker did not start")
+        return process, int(ready) if child else None
+
+    def test_stop_only_stops_suspended_process_tree_and_preserves_other_workspace(self):
+        worker, child = self.start_cleanup_worker(child=True)
+        unrelated, _ = self.start_cleanup_worker(outside=True)
+        artifact = self.root / "build/keep.txt"
+        cache = self.root / "src/__pycache__/keep.pyc"
+        for path in (artifact, cache):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.touch()
+        for pid in (worker.pid, child):
+            os.kill(pid, signal.SIGSTOP)
+        deadline = time.monotonic() + 3
+        while any(Path(f"/proc/{pid}/stat").read_text().rsplit(") ", 1)[1].split()[0] != "T"
+                  for pid in (worker.pid, child)):
+            self.assertLess(time.monotonic(), deadline, "Fixture did not suspend")
+            time.sleep(0.02)
+        output = self.run_script("clean_ws.sh", "--stop-only")
+        self.assertEqual(worker.wait(timeout=3), 0)
+        self.assertFalse(Path(f"/proc/{child}").exists())
+        self.assertIsNone(unrelated.poll())
+        self.assertTrue(artifact.exists())
+        self.assertTrue(cache.exists())
+        self.assertIn("[ok] No workspace processes remain", output)
+
+    def test_cleanup_forces_unresponsive_process_to_exit_before_removing_build(self):
+        worker, _ = self.start_cleanup_worker(stubborn=True)
+        for folder in ("build", "install", "log"):
+            (self.root / folder).mkdir()
+        output = self.run_script("clean_ws.sh")
+        self.assertEqual(worker.wait(timeout=3), -signal.SIGKILL)
+        self.assertLess(output.index("SIGKILL"), output.index("[remove]"))
+        for folder in ("build", "install", "log"):
+            self.assertFalse((self.root / folder).exists())
+        self.assertTrue(self.prefix.exists())
 
     def prepare_workspace(self):
         (self.prefix / "conda-meta").mkdir(exist_ok=True)

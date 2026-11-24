@@ -11,6 +11,7 @@ from geometry_msgs.msg import PoseStamped, TransformStamped
 import message_filters
 import numpy as np
 import rclpy
+from rclpy.clock import Clock, ClockType
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
 from rclpy.time import Time
@@ -43,6 +44,11 @@ class RGBDDetector(Node):
         self.camera_marker_pub = self.create_publisher(
             MarkerArray, "/perception/camera_markers",
             QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
+        self.camera_visuals = None
+        # Repaint after RViz Reset without respawning the sensor or waiting
+        # for the simulation clock to advance.
+        self.camera_marker_timer = self.create_timer(
+            1.0, self.publish_camera_markers, clock=Clock(clock_type=ClockType.STEADY_TIME))
         self.status_pub = self.create_publisher(String, "/perception/status", 10)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -62,6 +68,10 @@ class RGBDDetector(Node):
 
     def on_info(self, message):
         self.info = message
+
+    def publish_camera_markers(self):
+        if self.camera_visuals is not None:
+            self.camera_marker_pub.publish(self.camera_visuals)
 
     def spawn_camera(self):
         if self.spawn_future is not None or not self.spawn_client.service_is_ready():
@@ -95,7 +105,8 @@ class RGBDDetector(Node):
                 q.x, q.y, q.z, q.w = quaternion_from_rpy(*rpy)
                 transforms.append(transform)
             self.static_tf.sendTransform(transforms)
-            self.camera_marker_pub.publish(camera_markers(self.config))
+            self.camera_visuals = camera_markers(self.config)
+            self.publish_camera_markers()
             self.get_logger().info("RGB-D camera ready; waiting for an unobstructed orange cuboid.")
         except Exception as error:
             self.get_logger().error(f"Cannot create calibrated RGB-D camera: {error}")

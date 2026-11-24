@@ -4,6 +4,7 @@ import json
 
 from gazebo_msgs.msg import LinkStates
 import rclpy
+from rclpy.clock import Clock, ClockType
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
@@ -22,7 +23,9 @@ class WarehouseDisplay(Node):
         self.wrist_pose = None
         self.held_item = None
         self.last_parts = None
+        self.last_signage = None
         self.phase = None
+        self.environment_snapshot = environment_markers(self.scene)
         retained = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.environment = self.create_publisher(MarkerArray, "/warehouse/environment", retained)
         self.parts = self.create_publisher(MarkerArray, "/warehouse/parts", retained)
@@ -31,7 +34,11 @@ class WarehouseDisplay(Node):
             LinkStates, "/gazebo/link_states", self.on_links,
             QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT))
         self.status = self.create_subscription(String, "/warehouse/status", self.on_status, retained)
-        self.environment.publish(environment_markers(self.scene))
+        self.environment.publish(self.environment_snapshot)
+        # RViz Reset clears markers without reconnecting its subscriptions.
+        # Restore cached visuals even if physics is stationary or paused.
+        self.refresh_timer = self.create_timer(
+            1.0, self.refresh_markers, clock=Clock(clock_type=ClockType.STEADY_TIME))
 
     def on_links(self, message):
         links = dict(zip(message.name, message.pose))
@@ -58,8 +65,16 @@ class WarehouseDisplay(Node):
         self.held_item = held_item
         self.publish_parts()
         if phase != self.phase:
-            self.signage.publish(factory_markers(self.scene, phase))
+            self.last_signage = factory_markers(self.scene, phase)
+            self.signage.publish(self.last_signage)
             self.phase = phase
+
+    def refresh_markers(self):
+        self.environment.publish(self.environment_snapshot)
+        if self.last_parts is not None:
+            self.parts.publish(self.last_parts)
+        if self.last_signage is not None:
+            self.signage.publish(self.last_signage)
 
     def publish_parts(self):
         markers = part_markers(self.scene, self.poses, self.colors,

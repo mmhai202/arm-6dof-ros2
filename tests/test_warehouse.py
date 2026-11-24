@@ -4,18 +4,25 @@ import copy
 from collections import Counter
 import math
 import random
+from types import SimpleNamespace
 import unittest
+from unittest.mock import Mock, patch
 import xml.etree.ElementTree as ET
 
+import cv2
 import numpy as np
 from arm_description.resources import load_yaml
 from arm_moveit_config.gazebo_scene import ENVIRONMENT_ID, gazebo_models, payload_in_box
 from arm_moveit_config.warehouse_observation import StockObservation
 from arm_moveit_config.warehouse_plan import plan_orders
 from arm_moveit_config.warehouse_scene import PALETTE, WarehouseScene
-from arm_perception.geometry import quaternion_from_rpy, transform_matrix
-from arm_perception.warehouse_detector import locate_stock
-from geometry_msgs.msg import Point
+from arm_perception.geometry import camera_sdf, quaternion_from_rpy, transform_matrix
+from arm_perception.mounting import camera_fixtures
+from arm_perception.warehouse_detector import WarehouseDetector, draw_stock_overlay, locate_stock
+from cv_bridge import CvBridge
+from geometry_msgs.msg import Point, TransformStamped
+from rclpy.clock import ClockType
+from sensor_msgs.msg import CameraInfo
 
 
 class StockPlannerTest(unittest.TestCase):
@@ -81,6 +88,50 @@ class StockPlannerTest(unittest.TestCase):
 
 
 class FactoryGeometryTest(unittest.TestCase):
+    def test_camera_support_is_centered_connected_and_clear_of_housing(self):
+        config = load_yaml("arm_perception", "config/warehouse_camera.yaml")
+        fixtures = {part["name"].removeprefix("perception_camera_"): part
+                    for part in camera_fixtures(config)}
+
+        def bounds(name):
+            part = fixtures[name]
+            rotation = transform_matrix([0, 0, 0], quaternion_from_rpy(*part["rpy"]))[:3, :3]
+            half = np.abs(rotation) @ np.array(part["size"]) / 2
+            return np.array(part["center"]) - half, np.array(part["center"]) + half
+
+        camera_x, camera_y, _ = config["camera"]["position"]
+        for part in fixtures.values():
+            self.assertAlmostEqual(part["center"][0], camera_x)
+        for name in ("factory_camera_drop", "factory_camera_plate"):
+            self.assertAlmostEqual(fixtures[name]["center"][1], camera_y)
+        # Every face in the support chain meets without a gap or penetration.
+        chain = ("housing", "factory_camera_plate", "factory_camera_drop", "factory_crossbar")
+        for lower, upper in zip(chain, chain[1:]):
+            self.assertAlmostEqual(bounds(lower)[1][2], bounds(upper)[0][2])
+        self.assertAlmostEqual(bounds("factory_foot")[1][2], bounds("factory_mast")[0][2])
+        self.assertAlmostEqual(bounds("factory_mast")[1][2], bounds("factory_crossbar")[1][2])
+        bar_min, bar_max = bounds("factory_crossbar")
+        for name in ("factory_camera_drop", "factory_mast"):
+            lower, upper = bounds(name)
+            self.assertTrue(np.all(lower[:2] >= bar_min[:2] - 1e-12))
+            self.assertTrue(np.all(upper[:2] <= bar_max[:2] + 1e-12))
+
+        # New support pieces must also reach both Gazebo and MoveIt's geometry.
+        camera = config["camera"]
+        base_from_camera = transform_matrix(camera["position"], quaternion_from_rpy(*camera["rpy"]))
+        sdf = ET.fromstring(camera_sdf(config))
+        planning = {obj.id: obj for obj in WarehouseScene().initial().world.collision_objects}
+        for part in fixtures.values():
+            name = part["name"]
+            collision = sdf.find(f".//collision[@name='{name}']")
+            xyzrpy = list(map(float, collision.findtext("pose").split()))
+            world = base_from_camera @ transform_matrix(xyzrpy[:3], quaternion_from_rpy(*xyzrpy[3:]))
+            np.testing.assert_allclose(world[:3, 3], part["center"], atol=1e-12)
+            p = planning[name].primitive_poses[0].position
+            np.testing.assert_allclose([p.x, p.y, p.z], part["center"], atol=1e-12)
+            np.testing.assert_allclose(planning[name].primitives[0].dimensions,
+                                       list(map(float, collision.findtext("geometry/box/size").split())))
+
     def test_grasp_and_release_preserve_the_active_parts_color(self):
         scene = WarehouseScene()
         for item in scene.dynamic_ids:
@@ -178,6 +229,87 @@ class StockObservationTest(unittest.TestCase):
             window = StockObservation(self.scene, after=10.0)
             for stamp in (10.1, 10.2, 10.3):
                 self.assertIsNone(window.add(message, stamp))
+
+
+class WarehousePreviewTest(unittest.TestCase):
+    def test_timer_uses_wall_time_even_when_simulation_is_paused(self):
+        with patch("arm_perception.warehouse_detector.RGBDDetector.__init__", return_value=None), \
+                patch.object(WarehouseDetector, "create_publisher"), \
+                patch.object(WarehouseDetector, "create_timer") as timer, \
+                patch("arm_perception.warehouse_detector.cv2.setNumThreads"):
+            detector = WarehouseDetector()
+        self.assertEqual(timer.call_args.args, (0.1, detector.publish_preview))
+        self.assertEqual(timer.call_args.kwargs["clock"].clock_type, ClockType.STEADY_TIME)
+
+    def test_empty_preview_never_repeats_an_old_image(self):
+        detector = SimpleNamespace(preview_image=None, image_pub=Mock())
+        WarehouseDetector.publish_preview(detector)
+        detector.image_pub.publish.assert_not_called()
+
+    def test_preview_keeps_only_newest_frame_with_capture_header_even_if_detection_fails(self):
+        for error in (False, True):
+            with self.subTest(detection_failure=error):
+                bridge = CvBridge()
+                transform = TransformStamped()
+                transform.transform.rotation.w = 1.0
+                detector = SimpleNamespace(
+                    bridge=bridge, info=CameraInfo(width=320, height=240), preview_image=None,
+                    config={"frame": "base_footprint", "detection": {}},
+                    tf_buffer=Mock(lookup_transform=Mock(return_value=transform)),
+                    stock_pub=Mock(), status_pub=Mock(), image_pub=Mock())
+                for index in (1, 2):
+                    pixels = np.full((240, 320, 3), index * 30, dtype=np.uint8)
+                    rgb = bridge.cv2_to_imgmsg(pixels, encoding="rgb8")
+                    rgb.header.frame_id = "camera_optical_frame"
+                    rgb.header.stamp.sec, rgb.header.stamp.nanosec = 12, index * 100_000_000
+                    depth = bridge.cv2_to_imgmsg(np.ones((240, 320), dtype=np.float32), encoding="32FC1")
+                    depth.header = copy.deepcopy(rgb.header)
+                    detector.info.header = rgb.header
+                    with patch("arm_perception.warehouse_detector.locate_stock", return_value=[],
+                               side_effect=ValueError("occluded") if error else None):
+                        WarehouseDetector.on_images(detector, rgb, depth)
+                detector.image_pub.publish.assert_not_called()
+                WarehouseDetector.publish_preview(detector)
+                output = detector.image_pub.publish.call_args.args[0]
+                self.assertEqual(output.header, rgb.header)
+                preview = bridge.imgmsg_to_cv2(output)
+                np.testing.assert_array_equal(preview[20:], pixels[20:])
+                self.assertFalse(np.array_equal(preview[:20], pixels[:20]))
+                np.testing.assert_array_equal(bridge.imgmsg_to_cv2(rgb), pixels)
+                self.assertIsNone(detector.preview_image)
+                WarehouseDetector.publish_preview(detector)
+                detector.image_pub.publish.assert_called_once()
+
+
+class WarehouseOverlayTest(unittest.TestCase):
+    def test_labels_match_boxes_and_base_frame_coordinates_in_millimetres(self):
+        objects = [{"color": "red", "bounds": [50, 50, 70, 70],
+                    "center": [0.4312, -0.025, 0.440]},
+                   {"color": "blue", "bounds": [150, 50, 170, 70],
+                    "center": [0.571, 0.180, 0.441]},
+                   {"color": "red", "bounds": [50, 100, 70, 120],
+                    "center": [0.432, 0.350, 0.440]}]
+        image = np.full((240, 320, 3), 80, dtype=np.uint8)
+        before = copy.deepcopy(objects)
+        with patch("arm_perception.warehouse_detector.cv2.putText", wraps=cv2.putText) as draw:
+            draw_stock_overlay(image, objects, "base_footprint")
+        labels = [call.args[1] for call in draw.call_args_list]
+        self.assertIn("DETECTED 3 | RED 2  BLUE 1  GREEN 0", labels)
+        self.assertIn("XYZ (mm) / base_footprint", labels)
+        for label in ("R1", "B1", "R2", "R1  431 -25 440", "B1  571 180 441", "R2  432 350 440"):
+            self.assertIn(label, labels)
+        self.assertEqual(objects, before)
+        # Object interiors remain visible; annotation is on their boundaries.
+        np.testing.assert_array_equal(image[60, 60], [80, 80, 80])
+
+    def test_failed_detection_is_distinct_from_a_successful_empty_scene(self):
+        for unavailable, expected in ((False, "DETECTED 0 | RED 0  BLUE 0  GREEN 0"),
+                                      (True, "DETECTION UNAVAILABLE")):
+            with self.subTest(unavailable=unavailable), \
+                    patch("arm_perception.warehouse_detector.cv2.putText", wraps=cv2.putText) as draw:
+                draw_stock_overlay(np.zeros((240, 320, 3), np.uint8), [],
+                                   "base_footprint", unavailable=unavailable)
+                self.assertEqual([call.args[1] for call in draw.call_args_list], [expected])
 
 
 class MultiObjectImageTest(unittest.TestCase):

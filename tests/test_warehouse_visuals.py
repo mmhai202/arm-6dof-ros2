@@ -4,12 +4,14 @@ import copy
 import json
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from gazebo_msgs.msg import LinkStates
 from geometry_msgs.msg import Point, Pose, Quaternion
 from std_msgs.msg import String
 from visualization_msgs.msg import Marker
+from rclpy.clock import ClockType
+from rclpy.node import Node
 
 from arm_moveit_config.warehouse_display import WarehouseDisplay
 from arm_moveit_config.warehouse_scene import WarehouseScene
@@ -27,7 +29,9 @@ class FactoryVisualsTest(unittest.TestCase):
     def display(self):
         display = SimpleNamespace(scene=self.scene, poses={}, colors=dict(self.scene.colors),
                                   wrist_pose=None, held_item=None,
-                                  phase=None, last_parts=None, signage=Mock(), parts=Mock())
+                                  phase=None, last_parts=None, last_signage=None,
+                                  environment_snapshot=environment_markers(self.scene),
+                                  environment=Mock(), signage=Mock(), parts=Mock())
         display.publish_parts = lambda: WarehouseDisplay.publish_parts(display)
         return display
 
@@ -91,6 +95,58 @@ class FactoryVisualsTest(unittest.TestCase):
         self.assertEqual(len(latest.markers), 6)
         self.assertTrue(all(m.action == Marker.ADD for m in latest.markers))
         self.assertAlmostEqual(latest.markers[0].pose.position.z, 0.5)
+
+    def test_reset_recovers_static_scene_without_new_physics_or_status(self):
+        display = self.display()
+        rendered = {}
+
+        def receive(message):
+            for marker in message.markers:
+                key = marker.ns, marker.id
+                if marker.action == Marker.ADD:
+                    rendered[key] = copy.deepcopy(marker)
+                elif marker.action == Marker.DELETE:
+                    rendered.pop(key, None)
+
+        for publisher in (display.environment, display.parts, display.signage):
+            publisher.publish.side_effect = receive
+        WarehouseDisplay.on_links(display, LinkStates(
+            name=[f"{item}::{item}" for item in self.scene.dynamic_ids], pose=list(self.poses.values())))
+        WarehouseDisplay.on_status(display, String(data=json.dumps({
+            "phase": "ready", "colors": self.scene.colors})))
+        WarehouseDisplay.refresh_markers(display)
+        expected = copy.deepcopy(rendered)
+        self.assertEqual(sum(ns == "factory_parts" for ns, _ in rendered), 6)
+        self.assertTrue(any(ns == "factory_environment" for ns, _ in rendered))
+        self.assertTrue(any(ns == "factory_signage" for ns, _ in rendered))
+        for _ in range(2):
+            # Reset clears local RViz visuals but leaves subscriptions alive.
+            rendered.clear()
+            WarehouseDisplay.refresh_markers(display)
+            self.assertEqual(rendered, expected)
+
+    def test_refresh_does_not_invent_parts_or_restore_removed_bodies(self):
+        display = self.display()
+        WarehouseDisplay.refresh_markers(display)
+        display.parts.publish.assert_not_called()
+        display.signage.publish.assert_not_called()
+        WarehouseDisplay.on_links(display, LinkStates(
+            name=[f"{item}::{item}" for item in self.scene.dynamic_ids], pose=list(self.poses.values())))
+        WarehouseDisplay.on_links(display, LinkStates())
+        WarehouseDisplay.refresh_markers(display)
+        self.assertTrue(all(marker.action == Marker.DELETE
+                            for marker in display.parts.publish.call_args.args[0].markers))
+
+    def test_visual_refresh_timer_runs_when_simulation_clock_is_paused(self):
+        with patch.object(Node, "__init__", return_value=None), \
+                patch.object(WarehouseDisplay, "create_publisher"), \
+                patch.object(WarehouseDisplay, "create_subscription"), \
+                patch.object(WarehouseDisplay, "create_timer") as timer:
+            display = WarehouseDisplay()
+        period, callback = timer.call_args.args
+        self.assertEqual(period, 1.0)
+        self.assertEqual(callback, display.refresh_markers)
+        self.assertEqual(timer.call_args.kwargs["clock"].clock_type, ClockType.STEADY_TIME)
 
     def test_held_part_follows_wrist_tf_with_measured_rotation_and_slip(self):
         item = self.scene.dynamic_ids[0]

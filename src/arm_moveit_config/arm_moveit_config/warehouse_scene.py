@@ -19,7 +19,6 @@ STEEL = (0.23, 0.29, 0.34)
 METAL = (0.57, 0.64, 0.69)
 DARK = (0.075, 0.10, 0.13)
 YELLOW = (0.98, 0.70, 0.06)
-TEAL = (0.05, 0.65, 0.67)
 
 
 class WarehouseScene(ShelfScene):
@@ -131,8 +130,6 @@ class WarehouseScene(ShelfScene):
                     [leg_x, leg_y, leg_height / 2], STEEL)
                 add(f"stock_table_foot_{ix}_{iy}", [0.065, 0.065, 0.012],
                     [leg_x, leg_y, 0.006], DARK)
-        for index, lane_y in enumerate(self.warehouse["lanes_y"]):
-            add(f"stock_lane_{index}", [dx - 0.03, 0.004, 0.002], [x, lane_y + 0.052, 0.421], TEAL)
 
         def bench(name, center, size, height):
             bx, by = center

@@ -40,8 +40,12 @@ colcon test-result --verbose
 
 ```bash
 ./scripts/clean_ws.sh  # Keep .conda/
+./scripts/clean_ws.sh --stop-only  # Stop the simulation; keep the current build
 ```
 
-Cleanup removes `build/`, `install/`, and `log/`. Before launching again, run
+Cleanup first stops this workspace's ROS, Gazebo and RViz processes, including
+suspended terminal jobs, then removes `build/`, `install/`, and `log/`. It waits
+for shutdown and forces any remaining processes to exit before deleting files.
+Before launching again, run
 `./scripts/install_dependencies.sh` to rebuild the workspace. Execute this script
 directly; sourcing it only loads helper functions and does not install or build.
