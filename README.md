@@ -18,11 +18,12 @@ Requires Miniforge/Miniconda with `conda` on `PATH`. Run from the workspace root
 ```
 
 Use **Plan & Execute** for manual control, or **Run Pick & Place** / **Stop**
-for the demo. Gazebo runs in the background.
+for the demo. Gazebo runs in the background. The demo uses an RGB-D camera
+to locate the randomly placed orange block before picking it.
 
 Demo settings: [shelf_pick_place.yaml](src/arm_moveit_config/config/shelf_pick_place.yaml).
 
-![Robot simulation demo](tests/demo.gif)
+![Robot simulation demo](tests/demo.png)
 
 ## Tests
 

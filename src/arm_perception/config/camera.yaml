@@ -1,0 +1,33 @@
+# Gazebo camera_link uses +X forward; camera_optical_frame uses +Z forward.
+frame: base_footprint
+camera:
+  # Roof-mounted bracket projects past the front edge to avoid the solid roof.
+  position: [0.30, 0.43, 1.00]
+  rpy: [0.0, 1.193, -0.945]
+  width: 320
+  height: 240
+  horizontal_fov: 1.05
+  update_rate: 10
+  near: 0.05
+  far: 3.0
+mount:
+  # The shelf roof's upper surface is Z=0.97 m.
+  - name: base
+    center: [0.40, 0.43, 0.978]
+    size: [0.10, 0.12, 0.016]
+  - name: post
+    center: [0.40, 0.43, 1.026]
+    size: [0.022, 0.022, 0.080]
+  - name: arm
+    center: [0.345, 0.43, 1.075]
+    size: [0.110, 0.022, 0.018]
+detection:
+  # Orange payload, excluding the brown shelf. OpenCV hue is in [0, 179].
+  hsv_lower: [0, 170, 70]
+  hsv_upper: [11, 255, 255]
+  min_pixels: 40
+  # Fit the visible top face of a known, axis-aligned cuboid.
+  object_size: [0.06, 0.04, 0.04]
+  extent_min_ratio: 0.65
+  extent_max_ratio: 1.20
+  min_top_area_ratio: 0.65

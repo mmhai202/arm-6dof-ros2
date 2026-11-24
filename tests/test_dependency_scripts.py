@@ -73,7 +73,7 @@ done
         for command in ("python", "python3"):
             (self.prefix / "bin" / command).symlink_to("/usr/bin/python3")
         for module in (
-            "numpy", "yaml", "rclpy", "ament_index_python",
+            "numpy", "cv2", "cv_bridge", "message_filters", "tf2_ros", "yaml", "rclpy", "ament_index_python",
             "launch", "launch_ros", "control_msgs", "sensor_msgs", "trajectory_msgs", "moveit_msgs",
             "arm_description", "arm_control",
         ):

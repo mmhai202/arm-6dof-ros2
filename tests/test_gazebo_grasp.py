@@ -55,6 +55,12 @@ class PhysicalSceneTest(unittest.TestCase):
             p = obj.primitive_poses[0].position
             np.testing.assert_allclose(list(map(float, link.findtext("pose").split()))[:3], [p.x, p.y, p.z])
 
+    def test_respawn_visual_material_names_are_unique_but_physics_names_stay_stable(self):
+        first, second = (ET.fromstring(gazebo_models(self.scene)[ENVIRONMENT_ID]) for _ in range(2))
+        self.assertEqual([link.get("name") for link in first.findall("model/link")],
+                         [link.get("name") for link in second.findall("model/link")])
+        self.assertNotEqual(first.find(".//visual").get("name"), second.find(".//visual").get("name"))
+
     def test_contact_sensor_targets_converted_collision_name(self):
         root = ET.fromstring(xacro.process_file(str(package_file(
             "arm_description", "urdf/arm.urdf.xacro"))).toxml())
@@ -240,6 +246,7 @@ class SceneResetTest(unittest.TestCase):
         events = []
         task = SimpleNamespace(
             scene=scene, models={ENVIRONMENT_ID: "fixture XML", OBJECT_ID: "payload XML"},
+            spawn_center=list(scene.pick_center),
             physics=scene.config["physics"], now=Mock(return_value=10.0), advance=Mock(),
             payload_pose=Pose(), payload_center=np.zeros(3), model_stamp=9.0,
             last_contact={"left": 9.9, "right": 9.9}, contact_forces={"left": 5.0, "right": 5.0},
@@ -450,6 +457,7 @@ class SceneHandoffTest(unittest.TestCase):
         scene = ShelfScene()
         self.task = SimpleNamespace(
             ownership=self.old, task_running=False, sync_enabled=True, sync_future=None,
+            use_perception=False,
             holding=False, fault=None, payload_pose=Pose(), stage="success", contact_forces={},
             measured_payload=Mock(return_value=scene.payload(scene.place_center)),
             sync_client=Mock(call_async=Mock(return_value=self.future)), report=Mock(),

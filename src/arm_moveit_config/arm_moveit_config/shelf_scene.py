@@ -106,6 +106,19 @@ class ShelfScene:
         for sign, name in ((-1, "left"), (1, "right")):
             add(f"cabinet_{name}", [dx, t, top],
                 [x, y + sign * (dy / 2 + t / 2), top / 2], wood)
+        if self.config.get("perception", {}).get("enabled", False):
+            from arm_perception.geometry import quaternion_from_rpy
+            from arm_perception.mounting import camera_fixtures
+            camera_config = load_yaml("arm_perception", "config/camera.yaml")
+            if camera_config["frame"] != self.frame:
+                raise ValueError("Camera fixtures and shelf must share a coordinate frame.")
+            for fixture in camera_fixtures(camera_config):
+                add(fixture["name"], fixture["size"], fixture["center"], fixture["color"])
+                # Camera Model markers render these boxes; keep collision
+                # metadata transparent here to avoid coplanar RViz surfaces.
+                result.object_colors[-1].color.a = 0.0
+                q = result.world.collision_objects[-1].primitive_poses[0].orientation
+                q.x, q.y, q.z, q.w = quaternion_from_rpy(*fixture["rpy"])
         b = self.config["box"]
         x, y = b["center_xy"]
         dx, dy = b["size_xy"]

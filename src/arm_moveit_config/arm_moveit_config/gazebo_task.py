@@ -4,6 +4,7 @@ import argparse
 import copy
 import json
 import math
+import random
 import sys
 import time
 
@@ -20,6 +21,7 @@ from control_msgs.action import FollowJointTrajectory
 from control_msgs.msg import JointTolerance
 from gazebo_msgs.msg import ContactsState, LinkStates
 from gazebo_msgs.srv import DeleteEntity, GetEntityState, SpawnEntity
+from geometry_msgs.msg import PoseStamped
 from moveit_msgs.action import ExecuteTrajectory
 from moveit_msgs.msg import MoveItErrorCodes
 from moveit_msgs.srv import ApplyPlanningScene
@@ -31,6 +33,9 @@ from std_msgs.msg import String
 
 from .gazebo_scene import gazebo_models, payload_is_settled
 from .scene_ownership import SceneOwnership
+from .perception_input import (
+    DetectionWindow, PERCEPTION_PARAMETERS, sample_spawn_center, validate_perception_config,
+)
 from .shelf_scene import OBJECT_ID, ShelfScene, scene_diff
 from .shelf_task import ShelfTask
 from .task_state import TaskCanceled
@@ -55,11 +60,27 @@ def pose_transform(pose):
 
 class GazeboShelfTask(ShelfTask):
     def __init__(self, *, motion_overrides=None, use_global_arguments=True,
-                 node_name="shelf_pick_place"):
+                 node_name="shelf_pick_place", perception_overrides=None):
         config = load_yaml("arm_moveit_config", "config/shelf_pick_place.yaml")
         config["motion"].update(motion_overrides or {})
         super().__init__(ShelfScene(config), use_global_arguments=use_global_arguments,
                          node_name=node_name)
+        self.scene.config["perception"].update(perception_overrides or {})
+        for parameter, key in PERCEPTION_PARAMETERS.items():
+            self.declare_parameter(parameter, self.scene.config["perception"][key])
+            self.scene.config["perception"][key] = self.get_parameter(parameter).value
+        self.use_perception = self.scene.config["perception"]["enabled"]
+        validate_perception_config(self.scene.config["perception"])
+        seed = self.scene.config["perception"]["spawn_seed"]
+        self.spawn_rng = random.Random(None if seed < 0 else seed)
+        self.spawn_center = list(self.scene.pick_center)
+        self.observation = None
+        self.detected_center = None
+        self.camera_center = None
+        self.grasp_verified = False
+        self.pose_subscription = self.create_subscription(
+            PoseStamped, self.scene.config["perception"]["pose_topic"],
+            self.on_detection, 10)
         for parameter, key in (("payload_mass", "mass"), ("payload_friction", "friction"),
                                ("grip_compression", "grip_compression")):
             self.declare_parameter(parameter, self.scene.config["physics"][key])
@@ -103,6 +124,31 @@ class GazeboShelfTask(ShelfTask):
     def now(self):
         return self.get_clock().now().nanoseconds / 1e9
 
+    def on_detection(self, message):
+        if self.observation is not None:
+            self.detected_center = self.observation.add(message, self.now())
+
+    def observe_object(self):
+        """Require fresh image measurements after reset, without any GT fallback."""
+        self.report_progress("perception", "observe_object")
+        self.observation = DetectionWindow(self.scene, after=self.now())
+        self.detected_center = None
+        timeout = self.scene.config["perception"]["timeout"]
+        deadline = self.now() + timeout
+        wall_deadline = time.monotonic() + max(30, timeout * 5)
+        try:
+            while self.now() < deadline and time.monotonic() < wall_deadline:
+                self.check_cancel()
+                rclpy.spin_once(self, timeout_sec=0.05)
+                if self.detected_center is not None:
+                    center = self.detected_center
+                    self.camera_center = list(center)
+                    self.get_logger().info(f"Camera target in {self.scene.frame}: {center}")
+                    return center
+            raise RuntimeError(f"Perception timed out: {self.observation.reason}")
+        finally:
+            self.observation = None
+
     def on_links(self, message):
         self.world_links = tuple(message.name)
         self.link_generation += 1
@@ -141,6 +187,11 @@ class GazeboShelfTask(ShelfTask):
                    for stamp in self.last_contact.values())
 
     def measured_payload(self):
+        if self.use_perception and not self.grasp_verified:
+            # Before grasping, only the camera estimate may enter MoveIt.
+            if self.camera_center is None:
+                raise RuntimeError("No valid camera target is available for the planning scene.")
+            return self.scene.payload(self.scene.pick_center)
         if self.payload_pose is None:
             raise RuntimeError("No Gazebo payload pose received.")
         obj = self.scene.payload([0, 0, 0])
@@ -238,7 +289,7 @@ class GazeboShelfTask(ShelfTask):
         self.stop_sync()
         self.task_running = False
         self.ownership.release()
-        self.sync_enabled = True
+        self.sync_enabled = not (self.use_perception and not self.grasp_verified and self.camera_center is None)
 
     def hold_arm(self):
         """Preempt the owned controller motion even if MoveIt ignores cancellation."""
@@ -337,6 +388,7 @@ class GazeboShelfTask(ShelfTask):
                 self.get_logger().warning(f"Scene reset incomplete: {error}; retrying before motion.")
 
     def reset_scene(self):
+        self.models = gazebo_models(self.scene)
         # Remove the payload before its supports, then finish all removals
         # before reusing model names. A service reply alone is not a scene snapshot.
         for name in reversed(self.models):
@@ -347,6 +399,9 @@ class GazeboShelfTask(ShelfTask):
                     raise RuntimeError(f"Cannot reset {name}: {result.status_message}")
         self.wait_for_models(present=False)
         self.payload_pose = self.payload_center = self.model_stamp = None
+        self.detected_center = None
+        self.camera_center = None
+        self.grasp_verified = False
         self.payload_twist = None
         self.last_contact = dict.fromkeys(self.last_contact, -math.inf)
         self.contact_forces = dict.fromkeys(self.contact_forces, 0.0)
@@ -355,7 +410,7 @@ class GazeboShelfTask(ShelfTask):
             request.initial_pose.orientation.w = 1.0
             if name == OBJECT_ID:
                 p = request.initial_pose.position
-                p.x, p.y, p.z = map(float, self.scene.pick_center)
+                p.x, p.y, p.z = map(float, self.spawn_center)
             response = self.call(SpawnEntity, "/spawn_entity", request)
             if not response.success:
                 raise RuntimeError(f"Cannot spawn {name}: {response.status_message}")
@@ -370,7 +425,7 @@ class GazeboShelfTask(ShelfTask):
         if self.payload_pose is None or self.now() - self.model_stamp > self.physics["contact_timeout"]:
             raise RuntimeError("Gazebo did not publish fresh feedback for the spawned payload.")
         p = self.payload_pose.position
-        if np.linalg.norm(np.array([p.x, p.y, p.z]) - self.scene.pick_center) > self.physics["max_grasp_drift"]:
+        if np.linalg.norm(np.array([p.x, p.y, p.z]) - self.spawn_center) > self.physics["max_grasp_drift"]:
             raise RuntimeError("Spawned payload did not settle at the shelf pick position.")
 
     def squeeze(self):
@@ -415,6 +470,7 @@ class GazeboShelfTask(ShelfTask):
             if not self.bilateral_contact():
                 raise RuntimeError("Cannot lift: bilateral payload contact is missing.")
             self.grasp_center = self.local_payload_center()
+            self.grasp_verified = True
             diff = self.scene.attach()
             p = diff.robot_state.attached_collision_objects[0].object.primitive_poses[0].position
             p.x, p.y, p.z = map(float, self.grasp_center)
@@ -476,7 +532,11 @@ class GazeboShelfTask(ShelfTask):
     def run(self, mode):
         self.check_cancel()
         self.report_progress("initializing", "reset_scene")
+        if self.use_perception and self.scene.config["perception"]["randomize_spawn"]:
+            self.spawn_center = sample_spawn_center(self.scene, self.spawn_rng)
         self.spawn_scene()
+        if self.use_perception:
+            self.scene.pick_center = self.observe_object()
         self.apply(self.scene.initial())
         self.set_finger_contact(False)
         self.wait_for_joints()
@@ -491,6 +551,11 @@ class GazeboShelfTask(ShelfTask):
         if mode == "plan":
             self.report_progress("planned", "planned")
             return
+        if self.use_perception:
+            # Planning can take seconds. Recheck before any physical motion.
+            center = self.observe_object()
+            if np.linalg.norm(np.array(center) - self.scene.pick_center) > 0.006:
+                raise RuntimeError("Camera target moved after planning; run the task again.")
         for index, (name, trajectory) in enumerate(planned):
             self.check_cancel()
             self.report_progress("executing", name, index, len(planned))
@@ -517,6 +582,9 @@ class GazeboShelfTask(ShelfTask):
         self.fault = str(error)
         self.stage = "failed"
         self.holding = False
+        if self.use_perception and not self.grasp_verified and self.camera_center is None:
+            self.sync_enabled = False
+            return  # No nominal or simulator position may replace a missing detection.
         # Never issue another scene write while the previous one is uncertain.
         if self.sync_future is not None or self.ownership.pending:
             self.sync_enabled = False

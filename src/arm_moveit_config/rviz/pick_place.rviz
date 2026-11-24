@@ -58,6 +58,36 @@ Visualization Manager:
         Scene Alpha: 0.9
         Show Scene Geometry: true
       Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Camera Model
+      Topic:
+        Value: /perception/camera_markers
+        Reliability Policy: Reliable
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Depth: 1
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Name: Perception Camera
+      Topic:
+        Value: /perception/debug_image
+        Reliability Policy: Best Effort
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Depth: 2
+      Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: Camera Target
+      Topic:
+        Value: /perception/object_marker
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Depth: 5
+      Value: true
     - Class: rviz_default_plugins/TF
       Enabled: false
       Frame Timeout: 15
@@ -96,5 +126,9 @@ Visualization Manager:
       Value: Orbit (rviz)
       Yaw: 0.74
 Window Geometry:
+  # Keep the camera preview below the tabbed controls at a readable size.
+  QMainWindow State: 000000ff00000000fd0000000100000000000001b800000368fc0200000002fc0000003e000001fd0000003801000020fa000000000200000003fb00000018005000690063006b0020002600200050006c0061006300650100000000ffffffff0000001700fffffffb000000100044006900730070006c0061007900730100000000ffffffff0000001700fffffffb0000000a005600690065007700730100000000ffffffff0000001700fffffffb0000002200500065007200630065007000740069006f006e002000430061006d0065007200610100000241000001650000001700ffffff0000041e0000036800000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Hide Left Dock: false
+  Hide Right Dock: false
   Height: 960
   Width: 1500

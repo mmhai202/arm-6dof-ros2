@@ -16,6 +16,7 @@ from rclpy.node import Node
 from rclpy.signals import SignalHandlerOptions
 
 from .gazebo_task import GazeboShelfTask
+from .perception_input import PERCEPTION_PARAMETERS
 from .shelf_scene import ShelfScene
 from .task_state import TaskCanceled
 
@@ -44,6 +45,11 @@ class PickPlaceServer(Node):
         self.gate = threading.Lock()
         self.busy = False
         self.blocked = False
+        defaults = load_yaml("arm_moveit_config", "config/shelf_pick_place.yaml")["perception"]
+        self.perception_options = {}
+        for parameter, key in PERCEPTION_PARAMETERS.items():
+            self.declare_parameter(parameter, defaults[key])
+            self.perception_options[key] = self.get_parameter(parameter).value
         self.server = ActionServer(
             self, PickPlace, ACTION_NAME, self.execute,
             callback_group=ReentrantCallbackGroup(), goal_callback=self.accept_goal,
@@ -83,6 +89,7 @@ class PickPlaceServer(Node):
             # callback spins the worker node, so its existing ROS waits remain
             # single-threaded and never re-enter the Action server executor.
             task = GazeboShelfTask(motion_overrides=goal_motion(handle.request),
+                                   perception_overrides=self.perception_options,
                                    use_global_arguments=False,
                                    node_name=f"shelf_task_{uuid.uuid4().hex[:8]}")
             task.cancel_requested = lambda: handle.is_cancel_requested or self.stopping.is_set()

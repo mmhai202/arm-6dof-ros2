@@ -16,7 +16,8 @@ from rclpy.action import GoalResponse
 
 class TaskActionTest(unittest.TestCase):
     def server(self):
-        return SimpleNamespace(gate=threading.Lock(), busy=False, blocked=False, stopping=threading.Event(),
+        return SimpleNamespace(gate=threading.Lock(), busy=False, blocked=False,
+                               stopping=threading.Event(), perception_options={},
                                get_logger=Mock())
 
     def handle(self):
@@ -77,6 +78,15 @@ class TaskActionTest(unittest.TestCase):
         handle.succeed.assert_called_once()
         worker.ownership.close.assert_called_once()
         self.assertFalse(server.busy)
+
+    def test_camera_mode_reaches_worker_without_global_ros_arguments(self):
+        server, handle = self.server(), self.handle()
+        server.perception_options = {"enabled": True, "randomize_spawn": True, "spawn_seed": 17}
+        with patch("arm_moveit_config.task_server.GazeboShelfTask", return_value=self.worker()) as factory:
+            self.assertTrue(PickPlaceServer.execute(server, handle).success)
+        options = factory.call_args.kwargs
+        self.assertEqual(options["perception_overrides"], server.perception_options)
+        self.assertFalse(options["use_global_arguments"])
 
     def test_cancel_is_terminal_only_after_cleanup(self):
         server, handle, worker = self.server(), self.handle(), self.worker()

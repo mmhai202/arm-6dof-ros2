@@ -1,6 +1,7 @@
 """Build Gazebo geometry from the same boxes MoveIt uses for planning."""
 
 import math
+import uuid
 import xml.etree.ElementTree as ET
 
 from .shelf_scene import OBJECT_ID
@@ -13,7 +14,7 @@ def _text(parent, tag, value):
     ET.SubElement(parent, tag).text = str(value)
 
 
-def _box_link(model, obj, *, mass=None, friction=0.8):
+def _box_link(model, obj, *, mass=None, friction=0.8, visual_suffix=""):
     size = obj.primitives[0].dimensions
     pose = obj.primitive_poses[0].position
     link = ET.SubElement(model, "link", name=obj.id)
@@ -29,7 +30,10 @@ def _box_link(model, obj, *, mass=None, friction=0.8):
                            ("ixy", 0), ("ixz", 0), ("iyz", 0)):
             _text(inertia, tag, value)
     for tag in ("collision", "visual"):
-        element = ET.SubElement(link, tag, name=tag)
+        # The sensor renderer can retain an OGRE material after physics confirms
+        # model deletion. New visual names prevent a duplicate-material crash
+        # when the task immediately respawns the same model and link names.
+        element = ET.SubElement(link, tag, name=tag + visual_suffix if tag == "visual" else tag)
         box = ET.SubElement(ET.SubElement(element, "geometry"), "box")
         _text(box, "size", " ".join(map(str, size)))
         if tag == "collision":
@@ -62,13 +66,16 @@ def gazebo_models(scene):
         raise ValueError("physics.placement_timeout must exceed physics.placement_hold_time.")
     roots = {name: ET.Element("sdf", version="1.6") for name in (ENVIRONMENT_ID, OBJECT_ID)}
     models = {name: ET.SubElement(root, "model", name=name) for name, root in roots.items()}
+    visual_suffix = "_" + uuid.uuid4().hex[:12]
     _text(models[ENVIRONMENT_ID], "static", "true")
     _text(models[OBJECT_ID], "static", "false")
     for obj in scene.initial().world.collision_objects:
+        if obj.id.startswith("perception_camera_"):
+            continue  # The static camera model owns these boxes in Gazebo.
         if obj.id == OBJECT_ID:
-            _box_link(models[OBJECT_ID], obj, mass=physics["mass"], friction=physics["friction"])
+            _box_link(models[OBJECT_ID], obj, mass=physics["mass"], friction=physics["friction"], visual_suffix=visual_suffix)
         else:
-            _box_link(models[ENVIRONMENT_ID], obj)
+            _box_link(models[ENVIRONMENT_ID], obj, visual_suffix=visual_suffix)
     return {name: ET.tostring(root, encoding="unicode") for name, root in roots.items()}
 
 

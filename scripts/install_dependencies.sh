@@ -12,6 +12,7 @@ ARM_BASE_DEPENDENCIES=(
   'cxx-compiler'
   'colcon-common-extensions'
   'numpy'
+  'opencv'
   'pyyaml'
   'yaml-cpp'
   'ros-humble-ros-base'
@@ -27,6 +28,10 @@ ARM_BASE_DEPENDENCIES=(
   'ros-humble-launch-ros'
   'ros-humble-control-msgs'
   'ros-humble-sensor-msgs'
+  'ros-humble-cv-bridge'
+  'ros-humble-message-filters'
+  'ros-humble-tf2-ros-py'
+  'ros-humble-visualization-msgs'
   'ros-humble-trajectory-msgs'
   'ros-humble-xacro'
   'ros-humble-robot-state-publisher'
@@ -125,7 +130,7 @@ arm_check_dependencies() {
   local profile="$1" missing=0 command command_path compiler_var compiler compiler_path spec package
   local -a commands=(python3 ros2 xacro gzserver)
   local -a specs=("${ARM_BASE_DEPENDENCIES[@]}" "${ARM_MOVEIT_DEPENDENCIES[@]}" "${ARM_GAZEBO_DEPENDENCIES[@]}")
-  local -a modules=(numpy yaml rclpy ament_index_python launch launch_ros control_msgs sensor_msgs trajectory_msgs moveit_msgs)
+  local -a modules=(numpy cv2 cv_bridge message_filters tf2_ros yaml rclpy ament_index_python launch launch_ros control_msgs sensor_msgs trajectory_msgs moveit_msgs)
   case "${profile}" in
     gazebo) ;;
     all) commands+=(colcon cmake make ninja pkg-config gazebo) ;;
