@@ -106,6 +106,7 @@ class PlacementFeedbackTest(unittest.TestCase):
         scene.config["physics"].update(placement_hold_time=0.25, placement_timeout=1.0)
         task = SimpleNamespace(
             scene=scene, physics=scene.config["physics"], fault=None, clock=0.0,
+            check_cancel=Mock(),
             model_stamp=0.0, payload_twist=Twist(),
             payload_pose=Pose(position=Point(x=-0.45, y=-0.25, z=0.035),
                               orientation=Quaternion(w=1.0)),
@@ -165,6 +166,7 @@ class ControllerCommandTest(unittest.TestCase):
         scene = ShelfScene()
         task = SimpleNamespace(
             scene=scene, physics=scene.config["physics"], gripper=Mock(),
+            check_cancel=Mock(),
             wait_simulation_result=Mock(return_value=SimpleNamespace(result=SimpleNamespace(error_code=0))),
             advance=Mock(), bilateral_contact=Mock(return_value=True),
         )
@@ -287,7 +289,7 @@ class SceneResetTest(unittest.TestCase):
         task.get_logger.return_value.warning.assert_called_once()
 
     def test_scene_barrier_waits_for_a_new_complete_physics_snapshot(self):
-        task = SimpleNamespace(models={ENVIRONMENT_ID: "", OBJECT_ID: ""},
+        task = SimpleNamespace(models={ENVIRONMENT_ID: "", OBJECT_ID: ""}, check_cancel=Mock(),
                                world_links=(), link_generation=1)
         snapshots = [(f"{ENVIRONMENT_ID}::shelf",),
                      (f"{ENVIRONMENT_ID}::shelf", f"{OBJECT_ID}::{OBJECT_ID}")]
@@ -359,7 +361,7 @@ class SynchronizedFeedbackTest(unittest.TestCase):
 
 class ContactGateTest(unittest.TestCase):
     def test_motion_result_wait_allows_slow_but_advancing_physics(self):
-        task = SimpleNamespace(now=Mock(side_effect=[100.0, 100.1, 100.2, 100.3]))
+        task = SimpleNamespace(now=Mock(side_effect=[100.0, 100.1, 100.2, 100.3]), check_cancel=Mock())
         future = Mock()
         future.done.side_effect = [False, False, False, True]
         future.result.return_value = "complete"
@@ -368,7 +370,7 @@ class ContactGateTest(unittest.TestCase):
             self.assertEqual(GazeboShelfTask.wait_simulation_result(task, future, 2), "complete")
 
     def test_motion_result_wait_rejects_a_stopped_simulation_clock(self):
-        task = SimpleNamespace(now=Mock(return_value=100.0))
+        task = SimpleNamespace(now=Mock(return_value=100.0), check_cancel=Mock())
         future = Mock()
         future.done.return_value = False
         with patch("arm_moveit_config.gazebo_task.time.monotonic", side_effect=[0, 31]):
@@ -557,7 +559,7 @@ class SceneHandoffTest(unittest.TestCase):
 
     def test_contention_times_out_without_claiming_the_scene(self):
         self.assertTrue(self.old.claim())
-        task = SimpleNamespace(ownership=self.new)
+        task = SimpleNamespace(ownership=self.new, check_cancel=Mock())
         with self.assertRaisesRegex(RuntimeError, "Another shelf task"):
             GazeboShelfTask.acquire_scene(task, timeout=0)
         self.assertTrue(self.old.resume())

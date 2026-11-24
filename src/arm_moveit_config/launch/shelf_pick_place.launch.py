@@ -23,5 +23,5 @@ def generate_launch_description():
             package="arm_moveit_config", executable="shelf_pick_place.py", output="screen",
             parameters=[{"mode": LaunchConfiguration("task_mode"),
                          "use_sim_time": True}],
-        )]),
+        ), Node(package="arm_moveit_config", executable="pick_place_server.py", output="screen")]),
     ])

@@ -1,0 +1,26 @@
+# Use the demo YAML defaults, or override all seven motion settings below.
+bool use_default_motion true
+float64 velocity_scale 0.5
+float64 acceleration_scale 0.5
+float64 approach 0.1
+float64 lift 0.14
+float64 withdraw_clearance 0.3
+float64 transfer_z 0.55
+float64 place_clearance 0.025
+---
+uint8 SUCCESS=0
+uint8 CANCELED=1
+uint8 FAILED=2
+bool success
+uint8 error_code
+string message
+string final_stage
+float64 elapsed_seconds
+---
+# completed_stages counts finished stages in the current phase, not elapsed time.
+string phase
+string stage
+uint32 completed_stages
+uint32 total_stages
+bool holding
+float64 elapsed_seconds

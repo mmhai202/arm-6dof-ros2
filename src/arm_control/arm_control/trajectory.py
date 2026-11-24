@@ -1,6 +1,7 @@
 """ROS trajectory messages and action handling shared by CLI and service nodes."""
 
 import threading
+import time
 
 from action_msgs.msg import GoalStatus
 from arm_description import JOINT_NAMES
@@ -11,6 +12,10 @@ from trajectory_msgs.msg import JointTrajectoryPoint
 
 
 ACTION_NAME = "/arm_controller/follow_joint_trajectory"
+
+
+class MotionStopError(RuntimeError):
+    """The controller did not confirm that an interrupted motion ended."""
 
 
 def trajectory_goal(waypoints, *, joint_names=JOINT_NAMES):
@@ -25,11 +30,19 @@ def trajectory_goal(waypoints, *, joint_names=JOINT_NAMES):
     return goal
 
 
-def wait_for_future(future, timeout, *, node=None):
+def wait_for_future(future, timeout, *, node=None, cancel_check=None):
     """Spin a CLI node, or wait for a service node's existing executor."""
     if future.done():
         return future.result()
-    if node is not None:
+    if node is not None and cancel_check is not None:
+        deadline = time.monotonic() + timeout
+        while not future.done() and node.context.ok():
+            cancel_check()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            rclpy.spin_once(node, timeout_sec=min(0.05, remaining))
+    elif node is not None:
         rclpy.spin_until_future_complete(node, future, timeout_sec=timeout)
     else:
         completed = threading.Event()
@@ -74,7 +87,7 @@ def execute_trajectory(client, goal, server_timeout, result_timeout, *, node=Non
         return False, f"Timed out while waiting for trajectory execution. {detail}"
     except KeyboardInterrupt:
         if not cancel_trajectory(handle, node=node):
-            raise RuntimeError("Interrupted, but could not confirm trajectory cancellation.")
+            raise MotionStopError("Interrupted, but could not confirm trajectory cancellation.")
         raise
     if result.error_code != FollowJointTrajectory.Result.SUCCESSFUL:
         return False, (

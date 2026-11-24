@@ -10,7 +10,9 @@ import time
 import numpy as np
 import rclpy
 from action_msgs.msg import GoalStatus
-from arm_control.trajectory import ACTION_NAME, cancel_trajectory, trajectory_goal, wait_for_future
+from arm_control.trajectory import (
+    ACTION_NAME, MotionStopError, cancel_trajectory, trajectory_goal, wait_for_future,
+)
 from arm_description import GRIPPER_JOINT_NAMES, JOINT_NAMES
 from arm_description.model import RobotModel
 from arm_description.resources import load_yaml
@@ -31,6 +33,7 @@ from .gazebo_scene import gazebo_models, payload_is_settled
 from .scene_ownership import SceneOwnership
 from .shelf_scene import OBJECT_ID, ShelfScene, scene_diff
 from .shelf_task import ShelfTask
+from .task_state import TaskCanceled
 
 
 SCENE_SYNC_TIMEOUT = 5.0
@@ -51,8 +54,12 @@ def pose_transform(pose):
 
 
 class GazeboShelfTask(ShelfTask):
-    def __init__(self):
-        super().__init__(ShelfScene(load_yaml("arm_moveit_config", "config/shelf_pick_place.yaml")))
+    def __init__(self, *, motion_overrides=None, use_global_arguments=True,
+                 node_name="shelf_pick_place"):
+        config = load_yaml("arm_moveit_config", "config/shelf_pick_place.yaml")
+        config["motion"].update(motion_overrides or {})
+        super().__init__(ShelfScene(config), use_global_arguments=use_global_arguments,
+                         node_name=node_name)
         for parameter, key in (("payload_mass", "mass"), ("payload_friction", "friction"),
                                ("grip_compression", "grip_compression")):
             self.declare_parameter(parameter, self.scene.config["physics"][key])
@@ -205,8 +212,10 @@ class GazeboShelfTask(ShelfTask):
                 self.ownership.release()
 
     def acquire_scene(self, timeout=10):
+        self.check_cancel()
         deadline = time.monotonic() + timeout
         while not self.ownership.claim():
+            self.check_cancel()
             if time.monotonic() >= deadline:
                 raise RuntimeError("Another shelf task is busy or awaiting a scene update; retry after it finishes.")
             rclpy.spin_once(self, timeout_sec=0.05)
@@ -244,6 +253,7 @@ class GazeboShelfTask(ShelfTask):
         target = self.now() + seconds
         deadline = time.monotonic() + max(30, seconds * 5)
         while self.now() < target and time.monotonic() < deadline:
+            self.check_cancel()
             rclpy.spin_once(self, timeout_sec=0.05)
         if self.now() < target:
             raise RuntimeError("Gazebo simulation clock is not advancing.")
@@ -257,6 +267,7 @@ class GazeboShelfTask(ShelfTask):
         wall_deadline = time.monotonic() + max(30, timeout * 5)
         stable_since = last_stamp = None
         while self.now() < deadline and time.monotonic() < wall_deadline:
+            self.check_cancel()
             if self.fault:
                 raise RuntimeError(self.fault)
             stamp = self.model_stamp
@@ -284,6 +295,7 @@ class GazeboShelfTask(ShelfTask):
         deadline = previous + timeout
         last_progress = time.monotonic()
         while not future.done():
+            self.check_cancel()
             current = self.now()
             if current > previous:
                 previous = current
@@ -301,6 +313,7 @@ class GazeboShelfTask(ShelfTask):
         expected = set(self.models if names is None else names)
         deadline = time.monotonic() + 10
         while True:
+            self.check_cancel()
             found = {name for name in expected
                      if any(link.startswith(f"{name}::") for link in self.world_links)}
             ready = found == expected if present else not found
@@ -377,12 +390,13 @@ class GazeboShelfTask(ShelfTask):
         if handle is None or not handle.accepted:
             raise RuntimeError("Gripper rejected the squeeze command.")
         try:
+            self.check_cancel()
             result = self.wait_simulation_result(handle.get_result_async(), 15)
-        except (TimeoutError, RuntimeError, KeyboardInterrupt):
+        except (TaskCanceled, TimeoutError, RuntimeError, KeyboardInterrupt):
             if rclpy.ok(context=self.context):
                 self.hold_arm()
                 if not cancel_trajectory(handle, node=self):
-                    raise RuntimeError("Could not confirm gripper cancellation.")
+                    raise MotionStopError("Could not confirm gripper cancellation.")
             raise
         if result.result.error_code != FollowJointTrajectory.Result.SUCCESSFUL:
             raise RuntimeError(f"Gripper failed: {result.result.error_string}")
@@ -426,6 +440,7 @@ class GazeboShelfTask(ShelfTask):
         names = trajectory.joint_trajectory.joint_names
         deadline, wall_deadline = self.now() + 10.0, time.monotonic() + 30.0
         while True:
+            self.check_cancel()
             actual = dict(zip(self.latest_joints.name, self.latest_joints.position))
             if all(abs(actual[name] - target) < 0.008 for name, target in zip(names, first.positions)):
                 break
@@ -442,39 +457,43 @@ class GazeboShelfTask(ShelfTask):
             raise RuntimeError("MoveIt rejected execution.")
         self.active_goal = handle
         try:
+            self.check_cancel()
             duration = trajectory.joint_trajectory.points[-1].time_from_start
             result = self.wait_simulation_result(handle.get_result_async(), duration.sec + duration.nanosec / 1e9 + 30)
             if self.fault:
                 raise RuntimeError(self.fault)
             if result.status != GoalStatus.STATUS_SUCCEEDED or result.result.error_code.val != MoveItErrorCodes.SUCCESS:
                 raise RuntimeError(f"MoveIt execution failed: {result.result.error_code.val}.")
-        except (TimeoutError, RuntimeError, KeyboardInterrupt):
+        except (TaskCanceled, TimeoutError, RuntimeError, KeyboardInterrupt):
             if rclpy.ok(context=self.context):
                 self.hold_arm()
                 if not cancel_trajectory(handle, node=self):
-                    raise RuntimeError("Could not confirm MoveIt cancellation; arm hold requested.")
+                    raise MotionStopError("Could not confirm MoveIt cancellation; arm hold requested.")
             raise
         finally:
             self.active_goal = None
 
     def run(self, mode):
+        self.check_cancel()
+        self.report_progress("initializing", "reset_scene")
         self.spawn_scene()
         self.apply(self.scene.initial())
         self.set_finger_contact(False)
         self.wait_for_joints()
         if mode == "scene":
             self.sync_enabled = True
-            self.stage = "scene_ready"
+            self.report_progress("ready", "scene_ready")
             self.get_logger().info("Gazebo cabinet, dynamic payload and box ready; poses synchronized to MoveIt.")
             return
         planned = self.plan_task()
         self.get_logger().info("All physical pick-and-place stages planned successfully.")
         self.sync_enabled = True
         if mode == "plan":
-            self.stage = "planned"
+            self.report_progress("planned", "planned")
             return
-        for name, trajectory in planned:
-            self.stage = name
+        for index, (name, trajectory) in enumerate(planned):
+            self.check_cancel()
+            self.report_progress("executing", name, index, len(planned))
             self.get_logger().info(f"Executing physical stage: {name}")
             if name == "close_gripper":
                 self.squeeze()
@@ -490,7 +509,7 @@ class GazeboShelfTask(ShelfTask):
             if name == "release_gripper":
                 self.advance(self.physics["settle_time"])
                 self.wait_for_placement()
-        self.stage = "success"
+        self.report_progress("succeeded", "success", len(planned), len(planned))
         self.monitor()
         self.get_logger().info("SUCCESS: contact-only grasp lifted the free Gazebo payload and released it inside the box.")
 

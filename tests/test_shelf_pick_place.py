@@ -256,6 +256,7 @@ class TaskFailureTest(unittest.TestCase):
         task = SimpleNamespace(
             scene=ShelfScene(), state=Mock(return_value=RobotState()),
             get_logger=Mock(return_value=Mock()), apply=Mock(), execute=Mock(),
+            check_cancel=Mock(), report_progress=Mock(),
             set_finger_contact=Mock(),
             plan_motion=Mock(side_effect=RuntimeError("unreachable")),
         )

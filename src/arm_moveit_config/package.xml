@@ -11,6 +11,9 @@
   <depend>ament_index_cpp</depend>
   <depend>pluginlib</depend>
   <depend>rviz_common</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
+  <depend>arm_task_interfaces</depend>
   <depend>yaml-cpp</depend>
   <build_depend>qtbase5-dev</build_depend>
   <exec_depend>arm_bringup</exec_depend>

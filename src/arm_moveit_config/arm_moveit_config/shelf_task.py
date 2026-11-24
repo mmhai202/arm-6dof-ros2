@@ -25,10 +25,17 @@ import rclpy
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Header
 
+from .task_state import TaskCanceled, TaskProgress
+
 
 class ShelfTask(Node):
-    def __init__(self, scene):
-        super().__init__("shelf_pick_place", parameter_overrides=[Parameter("use_sim_time", value=True)])
+    def __init__(self, scene, *, use_global_arguments=True, node_name="shelf_pick_place"):
+        super().__init__(node_name, use_global_arguments=use_global_arguments,
+                         parameter_overrides=[Parameter("use_sim_time", value=True)])
+        self.cancel_requested = lambda: False
+        self.progress_callback = lambda progress: None
+        self.phase = "initializing"
+        self.stage = "initializing"
         for key, value in scene.motion.items():
             self.declare_parameter(f"motion.{key}", value)
         self.scene = ShelfScene({**scene.config, "motion": {
@@ -42,6 +49,14 @@ class ShelfTask(Node):
             JointState, "/joint_states", self.on_joints, 10)
         self.declare_parameter("mode", "execute")
 
+    def check_cancel(self):
+        if self.cancel_requested():
+            raise TaskCanceled("Task canceled by request.")
+
+    def report_progress(self, phase, stage, completed=0, total=0):
+        self.phase, self.stage = phase, stage
+        self.progress_callback(TaskProgress(phase, stage, completed, total))
+
     def on_joints(self, message):
         if set((*JOINT_NAMES, *GRIPPER_JOINT_NAMES)).issubset(message.name):
             self.latest_joints = message
@@ -49,6 +64,7 @@ class ShelfTask(Node):
     def wait_for_joints(self):
         deadline = time.monotonic() + 30
         while self.latest_joints is None and time.monotonic() < deadline:
+            self.check_cancel()
             rclpy.spin_once(self, timeout_sec=0.1)
         if self.latest_joints is None:
             raise RuntimeError("No complete /joint_states received from Gazebo.")
@@ -57,9 +73,17 @@ class ShelfTask(Node):
         if name not in self.service_clients:
             self.service_clients[name] = self.create_client(service, name)
         client = self.service_clients[name]
-        if not client.wait_for_service(timeout_sec=30):
-            raise RuntimeError(f"MoveIt service unavailable: {name}")
-        return wait_for_future(client.call_async(request), 45, node=self)
+        planning = service in (GetMotionPlan, GetPositionIK, GetCartesianPath)
+        deadline = time.monotonic() + 30
+        while not client.wait_for_service(timeout_sec=0.2):
+            if planning:
+                self.check_cancel()
+            if time.monotonic() >= deadline:
+                raise RuntimeError(f"MoveIt service unavailable: {name}")
+        # Planning requests can be abandoned. Scene writes must be acknowledged
+        # before cancellation can release ownership or restore the virtual scene.
+        return wait_for_future(client.call_async(request), 45, node=self,
+                               cancel_check=self.check_cancel if planning else None)
 
     def apply(self, scene):
         if any(item.object.operation == CollisionObject.REMOVE
@@ -147,7 +171,9 @@ class ShelfTask(Node):
         ]
         planned = []
         try:
-            for name, kind, target in stages:
+            for index, (name, kind, target) in enumerate(stages):
+                self.check_cancel()
+                self.report_progress("planning", name, index, len(stages))
                 self.get_logger().info(f"Planning: {name}")
                 if kind == "scene":
                     self.change_scene(name)
@@ -161,6 +187,7 @@ class ShelfTask(Node):
                     trajectory = self.plan_motion(kind, target, state)
                 planned.append((name, trajectory))
                 state = updated_state(state, trajectory.joint_trajectory)
+            self.report_progress("planning", "complete", len(stages), len(stages))
         finally:
             # Planning uses virtual joint states; restore the payload to the shelf
             # before any real execution or after a rejected partial plan.
