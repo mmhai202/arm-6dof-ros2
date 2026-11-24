@@ -267,6 +267,38 @@ class TaskFailureTest(unittest.TestCase):
         payload = next(obj for obj in restored.world.collision_objects if obj.id == OBJECT_ID)
         self.assertAlmostEqual(payload.primitive_poses[0].position.z, task.scene.pick_center[2])
 
+    def test_direct_cycle_plans_from_current_arm_pose_and_finishes_at_retreat(self):
+        for via_home in (False, True):
+            with self.subTest(via_home=via_home):
+                current = RobotState(is_diff=True, joint_state=JointState(
+                    name=list((*JOINT_NAMES, *GRIPPER_JOINT_NAMES)),
+                    position=[0.3] * len(JOINT_NAMES) + [0.025] * len(GRIPPER_JOINT_NAMES)))
+
+                def motion(kind, target, state):
+                    names = GRIPPER_JOINT_NAMES if kind == "gripper" else JOINT_NAMES
+                    positions = target if kind in ("gripper", "ompl") else [0.5] * len(names)
+                    return RobotTrajectory(joint_trajectory=JointTrajectory(
+                        joint_names=list(names), points=[JointTrajectoryPoint(positions=positions)]))
+
+                task = SimpleNamespace(
+                    scene=ShelfScene(), state=Mock(return_value=current),
+                    get_logger=Mock(return_value=Mock()), apply=Mock(),
+                    check_cancel=Mock(), report_progress=Mock(),
+                    change_scene=Mock(), set_finger_contact=Mock(),
+                    plan_motion=Mock(side_effect=motion),
+                    approach_motion=Mock(return_value=motion("ompl", [0.5] * len(JOINT_NAMES), current)),
+                )
+                planned = ShelfTask.plan_task(task, **({} if via_home else {"via_home": False}))
+                names = [name for name, _ in planned]
+                self.assertEqual(names[0], "open_gripper")
+                self.assertIn("release_gripper", names)
+                self.assertEqual(names[-1], "return_home" if via_home else "retreat")
+                self.assertEqual("home" in names, via_home)
+                if not via_home:
+                    start = task.approach_motion.call_args_list[0].args[2].joint_state
+                    positions = dict(zip(start.name, start.position))
+                    self.assertEqual([positions[name] for name in JOINT_NAMES], [0.3] * len(JOINT_NAMES))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -258,6 +258,10 @@ class SceneResetTest(unittest.TestCase):
 
         def wait(present, names=None):
             events.append(("feedback", (present, names)))
+            if not present:
+                task.world_links = ()
+            elif names:
+                task.world_links += tuple(f"{name}::link" for name in names)
             if present and names == (OBJECT_ID,):
                 self.assertIsNone(task.payload_pose, "A previous payload pose must not satisfy respawn")
                 self.assertTrue(all(stamp == -float("inf") for stamp in task.last_contact.values()))
@@ -287,6 +291,14 @@ class SceneResetTest(unittest.TestCase):
         task, _ = self.task(landed=False)
         with self.assertRaisesRegex(RuntimeError, "shelf pick position"):
             GazeboShelfTask.spawn_scene(task)
+
+    def test_empty_scene_spawns_without_querying_missing_entities(self):
+        task, events = self.task()
+        task.world_links = ()
+        GazeboShelfTask.spawn_scene(task)
+        self.assertFalse(any(service in (GetEntityState, DeleteEntity) for service, _ in events))
+        self.assertEqual([name for service, name in events if service is SpawnEntity],
+                         [ENVIRONMENT_ID, OBJECT_ID])
 
     def test_incomplete_setup_is_retried_before_any_motion(self):
         task = SimpleNamespace(reset_scene=Mock(side_effect=[RuntimeError("model disappeared"), None]),

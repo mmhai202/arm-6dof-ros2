@@ -13,6 +13,7 @@ from visualization_msgs.msg import Marker
 
 from arm_moveit_config.warehouse_display import WarehouseDisplay
 from arm_moveit_config.warehouse_scene import WarehouseScene
+from arm_moveit_config.warehouse_task import WarehouseTask
 from arm_moveit_config.warehouse_visuals import environment_markers, factory_markers, part_markers
 
 
@@ -24,8 +25,11 @@ class FactoryVisualsTest(unittest.TestCase):
                       for index, item in enumerate(self.scene.dynamic_ids)}
 
     def display(self):
-        return SimpleNamespace(scene=self.scene, poses={}, colors=dict(self.scene.colors),
-                               phase=None, last_parts=None, signage=Mock(), parts=Mock())
+        display = SimpleNamespace(scene=self.scene, poses={}, colors=dict(self.scene.colors),
+                                  wrist_pose=None, held_item=None,
+                                  phase=None, last_parts=None, signage=Mock(), parts=Mock())
+        display.publish_parts = lambda: WarehouseDisplay.publish_parts(display)
+        return display
 
     def test_only_status_text_remains_and_old_labels_are_deleted(self):
         for phase in ("ready", "planning", "executing", "succeeded", "stopped"):
@@ -74,6 +78,8 @@ class FactoryVisualsTest(unittest.TestCase):
         display = self.display()
         names = [f"{item}::{item}" for item in self.scene.dynamic_ids]
         WarehouseDisplay.on_links(display, LinkStates(name=names, pose=list(self.poses.values())))
+        # A physics update is displayed immediately, without waiting for a timer.
+        self.assertEqual(display.parts.publish.call_count, 1)
         WarehouseDisplay.publish_parts(display)
         WarehouseDisplay.publish_parts(display)
         self.assertEqual(display.parts.publish.call_count, 1)
@@ -85,6 +91,69 @@ class FactoryVisualsTest(unittest.TestCase):
         self.assertEqual(len(latest.markers), 6)
         self.assertTrue(all(m.action == Marker.ADD for m in latest.markers))
         self.assertAlmostEqual(latest.markers[0].pose.position.z, 0.5)
+
+    def test_held_part_follows_wrist_tf_with_measured_rotation_and_slip(self):
+        item = self.scene.dynamic_ids[0]
+        wrist = Pose(position=Point(x=1.0, y=2.0, z=3.0),
+                     orientation=Quaternion(z=2**-0.5, w=2**-0.5))
+        self.poses[item] = Pose(position=Point(x=1.0, y=2.1, z=3.02),
+                                orientation=Quaternion(z=1.0, w=0.0))
+        markers = part_markers(self.scene, self.poses, self.scene.colors,
+                               held_item=item, wrist_pose=wrist).markers
+        held = markers[0]
+        self.assertEqual(held.header.frame_id, "link_6")
+        self.assertTrue(held.frame_locked)
+        self.assertAlmostEqual(held.pose.position.x, 0.1)
+        self.assertAlmostEqual(held.pose.position.y, 0.0)
+        self.assertAlmostEqual(held.pose.position.z, 0.02)
+        self.assertAlmostEqual(held.pose.orientation.z, 2**-0.5)
+        self.assertAlmostEqual(held.pose.orientation.w, 2**-0.5)
+        self.assertTrue(all(m.header.frame_id == self.scene.frame and not m.frame_locked
+                            for m in markers[1:]))
+        self.poses[item].position.y += 0.005
+        self.poses[item].orientation = copy.deepcopy(wrist.orientation)
+        slipped = part_markers(self.scene, self.poses, self.scene.colors,
+                               held_item=item, wrist_pose=wrist).markers[0]
+        self.assertAlmostEqual(slipped.pose.position.x, 0.105)
+        self.assertAlmostEqual(slipped.pose.orientation.z, 0.0)
+        self.assertAlmostEqual(slipped.pose.orientation.w, 1.0)
+
+    def test_release_and_missing_physics_stop_following_the_wrist(self):
+        display = self.display()
+        item = self.scene.dynamic_ids[0]
+        names = [f"{item}::{item}", "arm_sim::link_6"]
+        poses = [self.poses[item], Pose(orientation=Quaternion(w=1.0))]
+        WarehouseDisplay.on_links(display, LinkStates(name=names, pose=poses))
+
+        def status(held_item):
+            WarehouseDisplay.on_status(display, String(data=json.dumps({
+                "phase": "executing", "colors": self.scene.colors, "held_item": held_item})))
+
+        status(item)
+        held = display.parts.publish.call_args.args[0].markers[0]
+        self.assertTrue(held.frame_locked)
+        status(None)
+        released = display.parts.publish.call_args.args[0].markers[0]
+        self.assertEqual((released.ns, released.id), (held.ns, held.id))
+        self.assertFalse(released.frame_locked)
+        self.assertEqual(released.header.frame_id, self.scene.frame)
+        self.assertEqual(released.pose, self.poses[item])
+        status(item)
+        WarehouseDisplay.on_links(display, LinkStates(name=names[:1], pose=poses[:1]))
+        self.assertFalse(display.parts.publish.call_args.args[0].markers[0].frame_locked)
+        WarehouseDisplay.on_links(display, LinkStates())
+        self.assertTrue(all(m.action == Marker.DELETE
+                            for m in display.parts.publish.call_args.args[0].markers))
+
+    def test_only_verified_physical_holding_is_reported_to_the_display(self):
+        task = SimpleNamespace(ownership=SimpleNamespace(held=True), scene=self.scene,
+                               object_id=self.scene.object_id, phase="executing", stage="lift",
+                               move_count=0, status=Mock())
+        for holding, fault in ((False, None), (True, None), (True, "Lost finger contact")):
+            task.holding, task.fault = holding, fault
+            WarehouseTask.publish_status(task)
+            status = json.loads(task.status.publish.call_args.args[0].data)
+            self.assertEqual(status["held_item"], task.object_id if holding and not fault else None)
 
 
 if __name__ == "__main__":

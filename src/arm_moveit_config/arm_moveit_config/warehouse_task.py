@@ -37,6 +37,7 @@ class WarehouseTask(GazeboShelfTask):
         self.status.publish(String(data=json.dumps({
             "phase": self.phase, "stage": self.stage, "moves": self.move_count,
             "locations": self.scene.locations, "colors": self.scene.colors,
+            "held_item": self.object_id if self.holding and not self.fault else None,
             "fault": self.fault,
         })))
 
@@ -170,7 +171,8 @@ class WarehouseTask(GazeboShelfTask):
                                  f"{self.scene.colors[move.item].upper()} to {destination} /")
             self.get_logger().info(f"Factory schedule ({len(moves)} moves remaining): {moves}")
             self.prepare_move(move)
-            planned = self.plan_task()
+            # Continue from the measured pose left by the previous retreat.
+            planned = self.plan_task(via_home=False)
             if mode == "plan":
                 self.report_progress("planned", "next_move_ready", len(planned), len(planned))
                 return

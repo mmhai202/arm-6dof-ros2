@@ -18,7 +18,7 @@ Requires Miniforge/Miniconda with `conda` on `PATH`. Run from the workspace root
 ./scripts/run_moveit.sh --warehouse  # Factory color sorting
 ```
 
-Use **Plan & Execute**, **Run Pick & Place**, or **Start Orders** in RViz.
+Use **Plan & Execute**, **Run Pick & Place**, or **Run** in RViz.
 Use **Stop** to cancel a demo. Gazebo runs in the background.
 
 Demo settings: [pick-and-place](src/arm_moveit_config/config/shelf_pick_place.yaml)
@@ -41,3 +41,7 @@ colcon test-result --verbose
 ```bash
 ./scripts/clean_ws.sh  # Keep .conda/
 ```
+
+Cleanup removes `build/`, `install/`, and `log/`. Before launching again, run
+`./scripts/install_dependencies.sh` to rebuild the workspace. Execute this script
+directly; sourcing it only loads helper functions and does not install or build.

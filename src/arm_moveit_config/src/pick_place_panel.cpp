@@ -43,10 +43,7 @@ public:
     }
     settings_ = new QWidget(this);
     auto * form = new QFormLayout(settings_);
-    start_ = new QPushButton(warehouse ? "Start Orders" : "Run Pick && Place", this);
-    if (warehouse) {
-      start_->setStyleSheet("padding: 10px; background: #167d83; color: white; font-weight: bold;");
-    }
+    start_ = new QPushButton(warehouse ? "Run" : "Run Pick && Place", this);
     stop_ = new QPushButton("Stop", this);
     progress_ = new QProgressBar(this);
     status_ = new QLabel("Waiting for the pick-and-place server...", this);

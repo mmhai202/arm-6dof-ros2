@@ -10,7 +10,7 @@ usage() {
   echo "Usage: $0 [--pick-place|--warehouse]"
   echo "Start MoveIt and RViz with Gazebo physics running in the background."
   echo "  --pick-place  Open the shelf-to-box scene; start with Run Pick & Place in RViz."
-  echo "  --warehouse  Open the factory cell; start with Start Orders in RViz."
+  echo "  --warehouse  Open the factory cell; start with Run in RViz."
   echo "  -h, --help    Show this help."
 }
 
@@ -40,7 +40,7 @@ mkdir -p "${ROS_LOG_DIR_PATH}"
 export ROS_LOG_DIR="${ROS_LOG_DIR_PATH}"
 launch_args=(use_moveit_rviz:=true)
 if [[ "${launch_file}" == warehouse.launch.py ]]; then
-  echo "[task] Click Start Orders in RViz to fulfill both orders and rearrange blocked stock."
+  echo "[task] Click Run in RViz to fulfill both orders and rearrange blocked stock."
   launch_args+=(task_mode:=scene)
 elif [[ "${launch_file}" == shelf_pick_place.launch.py ]]; then
   echo "[task] Click Run Pick & Place in RViz to start the full cycle."

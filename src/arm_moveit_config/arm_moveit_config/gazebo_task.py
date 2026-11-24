@@ -19,7 +19,7 @@ from arm_description.model import RobotModel
 from control_msgs.action import FollowJointTrajectory
 from control_msgs.msg import JointTolerance
 from gazebo_msgs.msg import ContactsState, LinkStates
-from gazebo_msgs.srv import DeleteEntity, GetEntityState, SpawnEntity
+from gazebo_msgs.srv import DeleteEntity, SpawnEntity
 from geometry_msgs.msg import PoseStamped
 from moveit_msgs.action import ExecuteTrajectory
 from moveit_msgs.msg import MoveItErrorCodes
@@ -391,11 +391,15 @@ class GazeboShelfTask(ShelfTask):
 
     def reset_scene(self):
         self.models = gazebo_models(self.scene)
+        # A fresh physics snapshot also covers an empty initial scene. Some
+        # Gazebo versions fail to reply to GetEntityState for missing models.
+        self.wait_for_models(present=True, names=())
+        existing = {name for name in self.models
+                    if any(link.startswith(f"{name}::") for link in self.world_links)}
         # Remove the payload before its supports, then finish all removals
         # before reusing model names. A service reply alone is not a scene snapshot.
         for name in reversed(self.models):
-            state = self.call(GetEntityState, "/gazebo/get_entity_state", GetEntityState.Request(name=name))
-            if state.success:
+            if name in existing:
                 result = self.call(DeleteEntity, "/delete_entity", DeleteEntity.Request(name=name))
                 if not result.success:
                     raise RuntimeError(f"Cannot reset {name}: {result.status_message}")

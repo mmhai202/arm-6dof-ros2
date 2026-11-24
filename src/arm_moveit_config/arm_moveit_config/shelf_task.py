@@ -160,15 +160,18 @@ class ShelfTask(Node):
         ensure_timing(trajectory, m["velocity_scale"], m["acceleration_scale"])
         return trajectory
 
-    def plan_task(self):
+    def plan_task(self, *, via_home=True):
         state = self.state()
-        home = load_named_poses()["home"]
         task_stages = self.scene.stages()
         poses = {name: target for name, _, target in task_stages}
         stages = [
             ("open_gripper", "gripper", (self.scene.motion["gripper_open"],) * len(GRIPPER_JOINT_NAMES)),
-            ("home", "ompl", home), *task_stages, ("return_home", "ompl", home),
         ]
+        if via_home:
+            home = load_named_poses()["home"]
+            stages += [("home", "ompl", home), *task_stages, ("return_home", "ompl", home)]
+        else:
+            stages += task_stages
         planned = []
         try:
             for index, (name, kind, target) in enumerate(stages):
