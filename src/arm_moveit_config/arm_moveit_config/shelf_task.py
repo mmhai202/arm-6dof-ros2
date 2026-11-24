@@ -139,18 +139,25 @@ class ShelfTask(Node):
             plan.group_name = "gripper" if kind == "gripper" else "arm"
             plan.pipeline_id = "ompl"
             plan.start_state = state
-            plan.num_planning_attempts = 5
+            # Accept the first validated solution on the common path. Broaden
+            # the search only if that first attempt cannot produce a valid plan.
+            plan.num_planning_attempts = 1
             plan.allowed_planning_time = m["planning_time"]
             plan.max_velocity_scaling_factor = m["velocity_scale"]
             plan.max_acceleration_scaling_factor = m["acceleration_scale"]
             plan.goal_constraints = [self.goal_constraints(
                 target, GRIPPER_JOINT_NAMES if kind == "gripper" else JOINT_NAMES)]
-            for _ in range(3):
+            for attempt in range(3):
                 response = self.call(GetMotionPlan, "/plan_kinematic_path", request).motion_plan_response
                 # A randomized path may fail the pipeline's final collision
                 # validation. Resample it; never execute that rejected path.
-                if response.error_code.val != MoveItErrorCodes.INVALID_MOTION_PLAN:
+                retry = response.error_code.val == MoveItErrorCodes.INVALID_MOTION_PLAN
+                if attempt == 0 and response.error_code.val in (
+                        MoveItErrorCodes.PLANNING_FAILED, MoveItErrorCodes.TIMED_OUT):
+                    retry = True
+                if not retry:
                     break
+                plan.num_planning_attempts = 5
             if response.error_code.val != MoveItErrorCodes.SUCCESS:
                 raise RuntimeError(f"OMPL planning failed: MoveIt code {response.error_code.val}.")
             trajectory = response.trajectory

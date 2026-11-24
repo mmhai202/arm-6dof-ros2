@@ -16,6 +16,11 @@ from .geometry import locate_cuboid, transform_matrix
 
 def locate_stock(rgb, depth, intrinsics, camera_to_base, config):
     """Fit each connected component separately, including multiple same-color parts."""
+    if rgb.ndim != 3 or rgb.shape[2] != 3 or depth.shape != rgb.shape[:2]:
+        raise ValueError("RGB and depth images must be aligned and have matching dimensions.")
+    k = np.asarray(intrinsics, dtype=float).reshape(3, 3)
+    if not np.isfinite(k).all() or k[0, 0] <= 0 or k[1, 1] <= 0:
+        raise ValueError("Invalid camera intrinsics.")
     hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
     result = []
     for color, threshold in config["colors"].items():
@@ -25,18 +30,28 @@ def locate_stock(rgb, depth, intrinsics, camera_to_base, config):
         for label in range(1, count):
             if stats[label, cv2.CC_STAT_AREA] < config["min_pixels"]:
                 continue
-            isolated = rgb.copy()
-            isolated[labels != label] = 0
+            x, y, width, height = stats[label, :4]
+            # Keep a background pixel around the component so erosion treats
+            # its boundary exactly as it does in the complete image.
+            x0, y0 = max(0, x - 1), max(0, y - 1)
+            x1, y1 = min(rgb.shape[1], x + width + 1), min(rgb.shape[0], y + height + 1)
+            isolated = rgb[y0:y1, x0:x1].copy()
+            isolated[labels[y0:y1, x0:x1] != label] = 0
+            local_k = k.copy()
+            local_k[0, 2] -= x0
+            local_k[1, 2] -= y0
             try:
-                center, pixels, _ = locate_cuboid(isolated, depth, intrinsics, camera_to_base,
-                                                  {**config, **threshold})
+                center, pixels, _ = locate_cuboid(
+                    isolated, depth[y0:y1, x0:x1], local_k, camera_to_base,
+                    {**config, **threshold})
             except ValueError:
                 continue
             if np.any(center < config["workspace_min"]) or np.any(center > config["workspace_max"]):
                 continue
             v, u = np.nonzero(pixels)
             result.append({"color": color, "center": center.tolist(),
-                           "bounds": [int(u.min()), int(v.min()), int(u.max()), int(v.max())]})
+                           "bounds": [int(u.min() + x0), int(v.min() + y0),
+                                      int(u.max() + x0), int(v.max() + y0)]})
     return result
 
 

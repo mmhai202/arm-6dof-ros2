@@ -252,6 +252,42 @@ class TaskFailureTest(unittest.TestCase):
         self.assertAlmostEqual(request.max_velocity_scaling_factor, 0.3)
         self.assertAlmostEqual(request.max_acceleration_scaling_factor, 0.2)
 
+    def test_planning_uses_one_attempt_then_broadens_only_for_recoverable_errors(self):
+        trajectory = RobotTrajectory(joint_trajectory=JointTrajectory(
+            joint_names=list(JOINT_NAMES), points=[
+                JointTrajectoryPoint(positions=[0.0] * len(JOINT_NAMES)),
+                JointTrajectoryPoint(positions=[0.1] * len(JOINT_NAMES)),
+            ]))
+        success = MoveItErrorCodes.SUCCESS
+        for codes, attempts in (
+                ([success], [1]),
+                ([MoveItErrorCodes.INVALID_MOTION_PLAN, success], [1, 5]),
+                ([MoveItErrorCodes.PLANNING_FAILED, success], [1, 5]),
+                ([MoveItErrorCodes.TIMED_OUT, success], [1, 5]),
+                ([MoveItErrorCodes.INVALID_MOTION_PLAN] * 3, [1, 5, 5]),
+                ([MoveItErrorCodes.INVALID_ROBOT_STATE], [1])):
+            with self.subTest(codes=codes):
+                seen = []
+                responses = iter(codes)
+
+                def reply(service, name, request):
+                    plan = request.motion_plan_request
+                    seen.append(plan.num_planning_attempts)
+                    self.assertEqual(plan.allowed_planning_time, task.scene.motion["planning_time"])
+                    return SimpleNamespace(motion_plan_response=SimpleNamespace(
+                        error_code=MoveItErrorCodes(val=next(responses)), trajectory=trajectory))
+
+                task = SimpleNamespace(scene=ShelfScene(), call=Mock(side_effect=reply),
+                                       goal_constraints=lambda target, names: ShelfTask.goal_constraints(
+                                           None, target, names))
+                if codes[-1] == success:
+                    self.assertIs(ShelfTask.plan_motion(task, "ompl", [0.1] * len(JOINT_NAMES),
+                                                       RobotState()), trajectory)
+                else:
+                    with self.assertRaisesRegex(RuntimeError, "OMPL planning failed"):
+                        ShelfTask.plan_motion(task, "ompl", [0.1] * len(JOINT_NAMES), RobotState())
+                self.assertEqual(seen, attempts)
+
     def test_failed_preflight_restores_scene_and_sends_no_motion(self):
         task = SimpleNamespace(
             scene=ShelfScene(), state=Mock(return_value=RobotState()),

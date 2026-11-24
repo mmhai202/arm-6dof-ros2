@@ -181,8 +181,7 @@ class StockObservationTest(unittest.TestCase):
 
 
 class MultiObjectImageTest(unittest.TestCase):
-    def test_six_individual_image_fits_including_multiple_same_color_parts(self):
-        scene = WarehouseScene()
+    def render(self, scene):
         config = load_yaml("arm_perception", "config/warehouse_camera.yaml")
         c = config["camera"]
         matrix = (transform_matrix(c["position"], quaternion_from_rpy(*c["rpy"]))
@@ -194,6 +193,7 @@ class MultiObjectImageTest(unittest.TestCase):
         rays = np.stack(((u-k[0, 2])/focal, (v-k[1, 2])/focal, np.ones_like(u)), axis=-1) @ matrix[:3, :3].T
         rgb = np.zeros((height, width, 3), np.uint8)
         depth = np.full((height, width), np.inf, np.float32)
+        bounds = {}
         for item in scene.dynamic_ids:
             center = np.array(scene.centers[item])
             with np.errstate(divide="ignore", invalid="ignore"):
@@ -203,10 +203,38 @@ class MultiObjectImageTest(unittest.TestCase):
             visible = (exit >= entry) & (entry > 0) & (entry < depth)
             depth[visible] = entry[visible]
             rgb[visible] = np.array(PALETTE[scene.colors[item]]) * 255
-        result = locate_stock(rgb, depth, k, matrix, config["detection"])
+            v, u = np.nonzero(visible)
+            bounds[item] = [int(u.min()), int(v.min()), int(u.max()), int(v.max())]
+        return rgb, depth, k, matrix, config["detection"], bounds
+
+    def test_six_individual_image_fits_including_multiple_same_color_parts(self):
+        scene = WarehouseScene()
+        rgb, depth, k, matrix, config, bounds = self.render(scene)
+        result = locate_stock(rgb, depth, k, matrix, config)
         self.assertEqual(len(result), 6)
         self.assertEqual(Counter(item["color"] for item in result), {"red": 2, "blue": 2, "green": 2})
         for item in scene.dynamic_ids:
             found = min(result, key=lambda detection: np.linalg.norm(np.array(detection["center"]) - scene.centers[item]))
             self.assertEqual(found["color"], scene.colors[item])
             np.testing.assert_allclose(found["center"], scene.centers[item], atol=0.003)
+            self.assertEqual(found["bounds"], bounds[item])
+
+    def test_cropped_fit_still_rejects_occlusion_and_invalid_depth(self):
+        scene = WarehouseScene()
+        rgb, depth, k, matrix, config, bounds = self.render(scene)
+        x0, y0, x1, y1 = bounds[scene.dynamic_ids[0]]
+        rgb[y0:y1 + 1, (x0 + x1) // 2:x1 + 1] = 0
+        result = locate_stock(rgb, depth, k, matrix, config)
+        self.assertEqual(len(result), 5)
+        for item in scene.dynamic_ids[1:]:
+            found = min(result, key=lambda detection: np.linalg.norm(
+                np.array(detection["center"]) - scene.centers[item]))
+            np.testing.assert_allclose(found["center"], scene.centers[item], atol=0.003)
+        self.assertEqual(locate_stock(rgb, np.zeros_like(depth), k, matrix, config), [])
+
+    def test_cropped_fit_rejects_misaligned_images_and_invalid_calibration(self):
+        rgb, depth, k, matrix, config, _ = self.render(WarehouseScene())
+        with self.assertRaisesRegex(ValueError, "aligned"):
+            locate_stock(rgb, depth[:10], k, matrix, config)
+        with self.assertRaisesRegex(ValueError, "intrinsics"):
+            locate_stock(rgb, depth, np.zeros((3, 3)), matrix, config)

@@ -124,7 +124,7 @@ class WarehouseTask(GazeboShelfTask):
                 if self.payload_pose.position.z < self.scene.pick_center[2] + self.scene.motion["lift"] * 0.6:
                     raise RuntimeError("Factory lift failed: stock did not leave its support.")
             if name == "release_gripper":
-                self.advance(self.physics["settle_time"])
+                # Fresh stationary samples determine when release is complete.
                 self.wait_for_placement()
                 p = self.payload_pose.position
                 target = self.scene.slot_centers[self.scene.destination]

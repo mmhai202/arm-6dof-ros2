@@ -29,9 +29,16 @@ if ENABLED:
 @unittest.skipUnless(ENABLED, "Set ARM_RUN_WAREHOUSE_TESTS=1 with --warehouse running.")
 class FactoryIntegrationTest(unittest.TestCase):
     def test_orders_and_buffer_relocations_are_physically_verified(self):
+        self.run_orders()
+
+    def test_full_speed_orders_keep_grip_during_wrist_rotation(self):
+        self.run_orders(full_speed=True)
+
+    def run_orders(self, *, full_speed=False):
         rclpy.init()
         node = rclpy.create_node("warehouse_integration")
         history = []
+        grasps = []
         physical = {}
         last_parts = None
         visual_checks, missing_parts, planning_errors = [], [], []
@@ -68,12 +75,23 @@ class FactoryIntegrationTest(unittest.TestCase):
             check_visuals()
 
         node.create_subscription(String, "/warehouse/status", on_status, 100)
+        node.create_subscription(String, "/shelf_grasp/status",
+                                 lambda msg: grasps.append(json.loads(msg.data)), 100)
         node.create_subscription(LinkStates, "/gazebo/link_states", on_links, qos_profile_sensor_data)
         node.create_subscription(MarkerArray, "/warehouse/parts", on_parts, retained)
         client = ActionClient(node, PickPlace, "/warehouse_order")
         try:
             self.assertTrue(client.wait_for_server(timeout_sec=30))
-            goal_future = client.send_goal_async(PickPlace.Goal())
+            goal = PickPlace.Goal()
+            motion = WarehouseScene().motion
+            if full_speed:
+                goal.use_default_motion = False
+                for name in ("approach", "lift", "withdraw_clearance", "transfer_z", "place_clearance"):
+                    setattr(goal, name, motion[name])
+                goal.velocity_scale = goal.acceleration_scale = 1.0
+            else:
+                self.assertEqual((motion["velocity_scale"], motion["acceleration_scale"]), (0.45, 0.40))
+            goal_future = client.send_goal_async(goal)
             rclpy.spin_until_future_complete(node, goal_future, timeout_sec=30)
             self.assertTrue(goal_future.done())
             handle = goal_future.result()
@@ -89,6 +107,13 @@ class FactoryIntegrationTest(unittest.TestCase):
                 self.fail("Factory task timed out; cancellation requested.")
             result = result_future.result().result
             self.assertTrue(result.success, result.message)
+            carried = [sample for sample in grasps if sample["holding"] and sample["grasp_drift"] is not None]
+            self.assertTrue(carried)
+            max_drift = max(sample["grasp_drift"] for sample in carried)
+            self.assertLess(max_drift, 0.003)
+            self.assertGreater(max(sample["tool_tilt"] for sample in carried), 0.5,
+                               "Exercise tilted transfers, where ODE used to cut the jaw force.")
+            node.get_logger().info(f"Warehouse grip: full_speed={full_speed}, max drift={max_drift * 1000:.3f} mm")
             self.assertIn("planning", visual_checks)
             self.assertIn("executing", visual_checks)
             self.assertFalse(any(missing_parts), "A displayed part disappeared during the task.")

@@ -579,7 +579,7 @@ class GazeboShelfTask(ShelfTask):
                     raise RuntimeError("Lift failed: Gazebo payload did not leave the shelf.")
                 self.get_logger().info("Verified physical lift with bilateral contact and free payload motion.")
             if name == "release_gripper":
-                self.advance(self.physics["settle_time"])
+                # Fresh stationary samples determine when release is complete.
                 self.wait_for_placement()
         self.report_progress("succeeded", "success", len(planned), len(planned))
         self.monitor()
