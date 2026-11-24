@@ -1,4 +1,6 @@
 Panels:
+  - Class: arm_moveit_config/PickPlacePanel
+    Name: Pick & Place
   - Class: rviz_common/Displays
     Name: Displays
     Property Tree Widget:

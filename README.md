@@ -2,23 +2,33 @@
 
 6-DOF arm simulation with ROS 2 Humble, Gazebo, MoveIt and RViz.
 
-## Setup and run
+## Setup
 
 Requires Miniforge/Miniconda with `conda` on `PATH`. Run from the workspace root:
 
 ```bash
 ./scripts/install_dependencies.sh  # Install dependencies in .conda/ and build
-./scripts/run_moveit.sh                        # Open Gazebo and RViz
-./scripts/run_moveit.sh --headless             # Gazebo in the background; RViz stays open
-./scripts/run_moveit.sh --pick-place           # Pick from shelf and place in floor box
-./scripts/run_moveit.sh --pick-place --headless
 ```
 
-The robot starts at `home`. In RViz, drag the goal and use **Plan & Execute**.
-Press Ctrl+C to stop. All scripts support `--help`.
+Run setup before the first launch and rerun after source changes or cleanup.
+Keep the Conda environment separate from `/opt/ros`; use `ARM_CONDA_PREFIX`
+to override `.conda/`.
 
-Rerun the installer after source changes or cleanup. Keep the Conda environment
-separate from `/opt/ros`; use `ARM_CONDA_PREFIX` to override `.conda/`.
+## Run
+
+Run from the workspace root after setup. These commands only launch the simulation:
+
+```bash
+./scripts/run_moveit.sh              # Open RViz with Gazebo physics in the background
+./scripts/run_moveit.sh --pick-place # Open the shelf scene; start with the RViz button
+```
+
+Gazebo always runs without its GUI, providing physics and robot state in place of
+real hardware. Use RViz to view and control the robot.
+
+The robot starts at `home`. In RViz, drag the goal and use **Plan & Execute**.
+With `--pick-place`, the scene waits for **Run Pick & Place** in the **Pick & Place**
+panel. That button runs the full shelf-to-box cycle; click again after it finishes to repeat. All scripts support `--help`.
 
 Demo settings: [shelf_pick_place.yaml](src/arm_moveit_config/config/shelf_pick_place.yaml).
 

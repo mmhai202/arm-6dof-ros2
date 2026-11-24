@@ -260,7 +260,7 @@ echo '# mock workspace overlay' > install/setup.bash
             ("run_moveit.sh", "arm_moveit_config moveit.launch.py", "use_moveit_rviz:=true"),
         ):
             with self.subTest(script=script):
-                self.run_script(script, "--headless")
+                self.run_script(script)
                 calls = self.log.read_text()
                 self.assertIn(f"launch launch {launch}", calls)
                 self.assertIn(option, calls)
@@ -274,25 +274,22 @@ echo '# mock workspace overlay' > install/setup.bash
                 self.assertIn("install_dependencies.sh", output)
                 self.assertFalse(self.log.exists())
 
-    def test_launcher_pick_place_and_headless_are_independent(self):
+    def test_launcher_opens_rviz_with_background_physics(self):
         self.prepare_workspace()
-        for options, launch, gazebo_gui in (
-            ((), "moveit.launch.py", "true"),
-            (("--headless",), "moveit.launch.py", "false"),
-            (("--pick-place",), "shelf_pick_place.launch.py", "true"),
-            (("--pick-place", "--headless"), "shelf_pick_place.launch.py", "false"),
-            (("--headless", "--pick-place"), "shelf_pick_place.launch.py", "false"),
+        for options, launch in (
+            ((), "moveit.launch.py"),
+            (("--pick-place",), "shelf_pick_place.launch.py"),
         ):
             with self.subTest(options=options):
                 self.run_script("run_moveit.sh", *options)
                 calls = self.log.read_text()
                 self.assertIn(f"arm_moveit_config {launch}", calls)
                 if "--pick-place" in options:
-                    self.assertIn("task_mode:=execute", calls)
+                    self.assertIn("task_mode:=scene", calls)
                 else:
                     self.assertNotIn("task_mode:=", calls)
                 self.assertNotIn("use_gazebo:=", calls)
-                self.assertIn(f"use_gazebo_gui:={gazebo_gui}", calls)
+                self.assertNotIn("use_gazebo_gui:=", calls)
                 self.assertIn("use_moveit_rviz:=true", calls)
                 self.assertNotIn("build ", calls)
                 self.assertNotIn("--yes", calls)
@@ -300,9 +297,9 @@ echo '# mock workspace overlay' > install/setup.bash
 
     def test_launcher_rejects_removed_and_unknown_flags_before_activation(self):
         self.env["CONDA_EXE"] = "/missing/conda"
-        for flag in ("--gazebo-gui", "--scene-only", "--plan-only", "--unknown"):
+        for flag in ("--headless", "--gazebo-gui", "--scene-only", "--plan-only", "--unknown"):
             with self.subTest(flag=flag):
-                output = self.run_script("run_moveit.sh", "--pick-place", "--headless", flag, expected=1)
+                output = self.run_script("run_moveit.sh", "--pick-place", flag, expected=1)
                 self.assertIn(f"Unknown option: {flag}", output)
                 self.assertFalse(self.log.exists())
 
@@ -345,7 +342,7 @@ echo '# mock workspace overlay' > install/setup.bash
         for command in ("colcon", "cmake", "make", "ninja", "cc", "c++", "gazebo"):
             (self.prefix / "bin" / command).unlink()
         for script in ("run_moveit.sh",):
-            self.run_script(script, "--headless")
+            self.run_script(script)
 
     def test_launcher_reports_incomplete_build(self):
         self.prepare_workspace()

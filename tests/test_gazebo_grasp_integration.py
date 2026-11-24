@@ -1,4 +1,4 @@
-"""Run physical grasps against a disposable run_moveit.sh --headless session.
+"""Run physical grasps against a disposable run_moveit.sh session.
 
 ARM_RUN_GAZEBO_GRASP_TESTS=1 python -m unittest discover -s tests -p test_gazebo_grasp_integration.py -v
 Start with plain Gazebo/MoveIt: these tests reset the demo fixtures/payload and
@@ -19,7 +19,7 @@ ENABLED = os.environ.get("ARM_RUN_GAZEBO_GRASP_TESTS") == "1"
 if ENABLED:
     import rclpy
     from arm_description.resources import load_yaml
-    from arm_moveit_config.gazebo_scene import payload_in_box
+    from arm_moveit_config.gazebo_scene import ENVIRONMENT_ID, payload_in_box
     from arm_moveit_config.shelf_scene import OBJECT_ID, ShelfScene
     from gazebo_msgs.srv import GetEntityState
     from moveit_msgs.msg import PlanningSceneComponents
@@ -119,6 +119,13 @@ class PhysicalGraspIntegrationTest(unittest.TestCase):
         self.assertTrue(lifted, "Payload must physically leave the shelf")
         self.assertTrue(any(all(force > 0.2 for force in sample["finger_forces"].values())
                             for sample in lifted))
+        drift = [sample["grasp_drift"] for sample in self.history
+                 if sample["holding"] and sample.get("grasp_drift") is not None]
+        self.assertTrue(drift, "Slip monitoring must use synchronized wrist/payload feedback")
+        self.assertLess(max(drift), scene.config["physics"]["max_grasp_drift"])
+        tilts = [sample["tool_tilt"] for sample in self.history
+                 if sample["holding"] and sample.get("tool_tilt") is not None]
+        self.assertTrue(tilts, "Loaded transfers must report the measured tool orientation")
         before_release = [sample["payload"][2] for sample in self.history
                           if sample["stage"] == "place" and sample["holding"]]
         response = self.call(GetEntityState, "/gazebo/get_entity_state", GetEntityState.Request(name=OBJECT_ID))
@@ -128,6 +135,21 @@ class PhysicalGraspIntegrationTest(unittest.TestCase):
         self.assertTrue(before_release)
         self.assertGreater(min(before_release) - response.state.pose.position.z, 0.005,
                            "Opening must let the free body drop onto the box bottom")
+
+    def test_repeated_resets_keep_fixtures_and_payload_on_shelf(self):
+        scene = ShelfScene(load_yaml("arm_moveit_config", "config/shelf_pick_place.yaml"))
+        for reset in range(3):
+            with self.subTest(reset=reset):
+                result, log = self.run_task(mode="scene")
+                self.assertEqual(result, 0, log)
+                fixture = self.call(GetEntityState, "/gazebo/get_entity_state",
+                                    GetEntityState.Request(name=ENVIRONMENT_ID))
+                payload = self.call(GetEntityState, "/gazebo/get_entity_state",
+                                    GetEntityState.Request(name=OBJECT_ID))
+                self.assertTrue(fixture.success, "Reset must not remove the freshly spawned supports")
+                self.assertTrue(payload.success, "Reset must not remove the freshly spawned payload")
+                for axis, expected in zip("xyz", scene.pick_center):
+                    self.assertAlmostEqual(getattr(payload.state.pose.position, axis), expected, delta=0.002)
 
     def test_low_friction_grasp_fails_and_updates_free_object_pose(self):
         result, log = self.run_task("payload_friction:=0.001")
@@ -143,6 +165,8 @@ class PhysicalGraspIntegrationTest(unittest.TestCase):
         actual = self.call(GetEntityState, "/gazebo/get_entity_state", GetEntityState.Request(name=OBJECT_ID))
         self.assertTrue(actual.success)
         obj = next(item for item in response.scene.world.collision_objects if item.id == OBJECT_ID)
-        for axis in "xyz":
+        # --once stops synchronization at exit; the free body may keep falling
+        # afterward. Compare MoveIt's final snapshot with the last reported pose.
+        for axis, expected in zip("xyz", self.history[-1]["payload"]):
             self.assertAlmostEqual(getattr(obj.pose.position, axis),
-                                   getattr(actual.state.pose.position, axis), delta=0.01)
+                                   expected, delta=0.01)

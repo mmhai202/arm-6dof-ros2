@@ -47,9 +47,6 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("use_rviz", default_value="true", description="Enable RViz."),
         DeclareLaunchArgument(
-            "use_gazebo_gui", default_value="false", description="Enable Gazebo GUI.",
-        ),
-        DeclareLaunchArgument(
             "gazebo_verbose", default_value="false", description="Verbose Gazebo logging.",
         ),
         DeclareLaunchArgument("world", default_value=str(package_file("arm_bringup", "worlds/arm.world"))),
@@ -65,7 +62,7 @@ def generate_launch_description():
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(gazebo_launch),
             launch_arguments={
-                "gui": LaunchConfiguration("use_gazebo_gui"),
+                "gui": "false",
                 "verbose": LaunchConfiguration("gazebo_verbose"),
                 "world": LaunchConfiguration("world"),
                 "server_required": "true",

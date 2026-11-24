@@ -11,12 +11,10 @@ from launch_ros.actions import Node
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("use_moveit_rviz", default_value="true"),
-        DeclareLaunchArgument("use_gazebo_gui", default_value="false"),
-        DeclareLaunchArgument("task_mode", default_value="execute", choices=["scene", "plan", "execute"]),
+        DeclareLaunchArgument("task_mode", default_value="scene", choices=["scene", "plan", "execute"]),
         IncludeLaunchDescription(PythonLaunchDescriptionSource(str(package_file(
             "arm_moveit_config", "launch/moveit.launch.py"))), launch_arguments={
                 "use_moveit_rviz": LaunchConfiguration("use_moveit_rviz"),
-                "use_gazebo_gui": LaunchConfiguration("use_gazebo_gui"),
                 "rviz_config": str(package_file("arm_moveit_config", "rviz/pick_place.rviz")),
                 # Task plans its own home motion through MoveIt; avoid competing goals.
                 "auto_home": "false",

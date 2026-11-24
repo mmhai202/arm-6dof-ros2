@@ -63,7 +63,6 @@ def generate_launch_description():
         parameters=[*model_parameters, sim_time],
     )
     return LaunchDescription([
-        DeclareLaunchArgument("use_gazebo_gui", default_value="false"),
         DeclareLaunchArgument("gazebo_verbose", default_value="false"),
         DeclareLaunchArgument("world", default_value=str(package_file("arm_bringup", "worlds/arm.world"))),
         DeclareLaunchArgument(
@@ -85,7 +84,6 @@ def generate_launch_description():
             PythonLaunchDescriptionSource(str(package_file("arm_bringup", "launch/gazebo_arm.launch.py"))),
             launch_arguments={
                 "use_rviz": "false",
-                "use_gazebo_gui": LaunchConfiguration("use_gazebo_gui"),
                 "gazebo_verbose": LaunchConfiguration("gazebo_verbose"),
                 "world": LaunchConfiguration("world"),
                 "auto_home": LaunchConfiguration("auto_home"),

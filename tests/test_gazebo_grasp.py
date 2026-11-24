@@ -19,8 +19,9 @@ try:
     from arm_moveit_config.gazebo_task import GazeboShelfTask, main
     from arm_moveit_config.scene_ownership import SceneOwnership
     from arm_moveit_config.shelf_scene import OBJECT_ID, ShelfScene
-    from gazebo_msgs.msg import ContactsState, ContactState
-    from geometry_msgs.msg import Pose, Vector3, Wrench
+    from gazebo_msgs.msg import ContactsState, ContactState, LinkStates
+    from gazebo_msgs.srv import DeleteEntity, GetEntityState, SpawnEntity
+    from geometry_msgs.msg import Point, Pose, Vector3, Wrench
     from rclpy.executors import ExternalShutdownException
     from sensor_msgs.msg import JointState
 except ImportError as exc:
@@ -156,6 +157,131 @@ class ShutdownTest(unittest.TestCase):
                 ros.try_shutdown.assert_called_once()
 
 
+class SceneResetTest(unittest.TestCase):
+    def task(self, *, landed=True):
+        scene = ShelfScene()
+        events = []
+        task = SimpleNamespace(
+            scene=scene, models={ENVIRONMENT_ID: "fixture XML", OBJECT_ID: "payload XML"},
+            physics=scene.config["physics"], now=Mock(return_value=10.0), advance=Mock(),
+            payload_pose=Pose(), payload_center=np.zeros(3), model_stamp=9.0,
+            last_contact={"left": 9.9, "right": 9.9}, contact_forces={"left": 5.0, "right": 5.0},
+        )
+
+        def call(service, name, request):
+            events.append((service, request.name))
+            return SimpleNamespace(success=True)
+
+        def wait(present, names=None):
+            events.append(("feedback", (present, names)))
+            if present and names == (OBJECT_ID,):
+                self.assertIsNone(task.payload_pose, "A previous payload pose must not satisfy respawn")
+                self.assertTrue(all(stamp == -float("inf") for stamp in task.last_contact.values()))
+                x, y, z = scene.pick_center
+                task.payload_pose = Pose(position=Point(x=x, y=y, z=z if landed else 0.02))
+                task.model_stamp = task.now()
+
+        task.call = call
+        task.wait_for_models = wait
+        task.world_links = tuple(f"{name}::link" for name in task.models)
+        task.reset_scene = lambda: GazeboShelfTask.reset_scene(task)
+        task.get_logger = Mock()
+        return task, events
+
+    def test_reset_removes_payload_before_supports_and_confirms_empty_scene_before_respawn(self):
+        task, events = self.task()
+        GazeboShelfTask.spawn_scene(task)
+        deletes = [name for service, name in events if service is DeleteEntity]
+        self.assertEqual(deletes, [OBJECT_ID, ENVIRONMENT_ID])
+        self.assertLess(events.index((DeleteEntity, ENVIRONMENT_ID)), events.index(("feedback", (False, None))))
+        self.assertLess(events.index(("feedback", (False, None))), events.index((SpawnEntity, ENVIRONMENT_ID)))
+        self.assertLess(events.index(("feedback", (True, (ENVIRONMENT_ID,)))), events.index((SpawnEntity, OBJECT_ID)))
+        self.assertLess(events.index((SpawnEntity, OBJECT_ID)), events.index(("feedback", (True, (OBJECT_ID,)))))
+        task.advance.assert_called_once_with(task.physics["settle_time"])
+
+    def test_payload_on_floor_cannot_pass_scene_setup(self):
+        task, _ = self.task(landed=False)
+        with self.assertRaisesRegex(RuntimeError, "shelf pick position"):
+            GazeboShelfTask.spawn_scene(task)
+
+    def test_incomplete_setup_is_retried_before_any_motion(self):
+        task = SimpleNamespace(reset_scene=Mock(side_effect=[RuntimeError("model disappeared"), None]),
+                               get_logger=Mock())
+        GazeboShelfTask.spawn_scene(task)
+        self.assertEqual(task.reset_scene.call_count, 2)
+        task.get_logger.return_value.warning.assert_called_once()
+
+    def test_scene_barrier_waits_for_a_new_complete_physics_snapshot(self):
+        task = SimpleNamespace(models={ENVIRONMENT_ID: "", OBJECT_ID: ""},
+                               world_links=(), link_generation=1)
+        snapshots = [(f"{ENVIRONMENT_ID}::shelf",),
+                     (f"{ENVIRONMENT_ID}::shelf", f"{OBJECT_ID}::{OBJECT_ID}")]
+
+        def receive(*args, **kwargs):
+            task.world_links = snapshots.pop(0)
+            task.link_generation += 1
+
+        with patch("arm_moveit_config.gazebo_task.rclpy.spin_once", side_effect=receive) as spin:
+            GazeboShelfTask.wait_for_models(task, present=True)
+            self.assertEqual(spin.call_count, 2)
+        task.world_links = ()
+        with patch("arm_moveit_config.gazebo_task.rclpy.spin_once", side_effect=receive), \
+                patch("arm_moveit_config.gazebo_task.time.monotonic", side_effect=[0.0, 11.0]):
+            with self.assertRaisesRegex(RuntimeError, "confirm removing"):
+                GazeboShelfTask.wait_for_models(task, present=False)
+
+
+class SynchronizedFeedbackTest(unittest.TestCase):
+    def task(self):
+        offset = np.eye(4)
+        offset[2, 3] = 0.12
+        return SimpleNamespace(
+            wrist_to_tcp=offset, payload_center=None, payload_pose=None, model_stamp=None,
+            world_links=(), link_generation=0,
+            now=Mock(return_value=10.0), physics={"contact_timeout": 0.5},
+            latest_joints=JointState(name=list(JOINT_NAMES), position=[2.0] * 6),
+        )
+
+    def test_rigid_grasp_stays_fixed_during_translation_and_rotation(self):
+        task = self.task()
+        wrist = Pose()
+        wrist.orientation.w = 1.0
+        payload = Pose(position=Point(x=0.01, y=-0.02, z=0.17))
+        message = LinkStates(name=[f"{OBJECT_ID}::{OBJECT_ID}", "arm_sim::link_6"],
+                             pose=[payload, wrist])
+        GazeboShelfTask.on_links(task, message)
+        reference = GazeboShelfTask.local_payload_center(task)
+        np.testing.assert_allclose(reference, [0.01, -0.02, 0.05], atol=1e-12)
+
+        # The tool moves and rotates 90 degrees about Y; the object stays fixed
+        # inside it. Unrelated joint feedback must not create apparent slip.
+        wrist.position.x, wrist.position.y, wrist.position.z = 1.0, 2.0, 3.0
+        wrist.orientation.y = wrist.orientation.w = 2**-0.5
+        payload.position.x, payload.position.y, payload.position.z = 1.17, 1.98, 2.99
+        task.now.return_value = 10.1
+        GazeboShelfTask.on_links(task, message)
+        task.latest_joints.position = [-2.0] * 6
+        task.now.return_value = 10.2
+        np.testing.assert_allclose(GazeboShelfTask.local_payload_center(task), reference, atol=1e-12)
+
+        # Actual motion inside the fingers still registers as slip.
+        payload.position.x += 0.03
+        GazeboShelfTask.on_links(task, message)
+        self.assertAlmostEqual(np.linalg.norm(GazeboShelfTask.local_payload_center(task) - reference), 0.03)
+
+    def test_missing_wrist_does_not_refresh_or_mix_payload_samples(self):
+        task = self.task()
+        task.payload_center = np.array([0.0, 0.0, 0.05])
+        task.payload_pose = Pose()
+        task.model_stamp = 10.0
+        task.now.return_value = 10.6
+        GazeboShelfTask.on_links(task, LinkStates(
+            name=[f"{OBJECT_ID}::{OBJECT_ID}"], pose=[Pose()]))
+        self.assertEqual(task.model_stamp, 10.0)
+        with self.assertRaisesRegex(RuntimeError, "stale synchronized"):
+            GazeboShelfTask.local_payload_center(task)
+
+
 class ContactGateTest(unittest.TestCase):
     def test_motion_result_wait_allows_slow_but_advancing_physics(self):
         task = SimpleNamespace(now=Mock(side_effect=[100.0, 100.1, 100.2, 100.3]))
@@ -176,7 +302,7 @@ class ContactGateTest(unittest.TestCase):
 
     def task(self):
         task = SimpleNamespace(
-            ownership=Mock(), task_running=True,
+            ownership=Mock(), task_running=True, tool_tilt=0.0,
             now=Mock(return_value=10.0), physics={"min_contact_force": 0.2, "contact_timeout": 0.5,
                                                "max_grasp_drift": 0.018},
             contact_forces={"left": 0.0, "right": 0.0},
@@ -210,13 +336,13 @@ class ContactGateTest(unittest.TestCase):
         self.assertFalse(GazeboShelfTask.bilateral_contact(task))
 
     def test_contact_loss_or_slip_cancels_motion(self):
-        for contact, drift in ((False, 0.0), (True, 0.03)):
-            with self.subTest(contact=contact, drift=drift):
+        for contact, drift, age in ((False, 0.0, 0.0), (True, 0.03, 0.0), (True, 0.0, 0.6)):
+            with self.subTest(contact=contact, drift=drift, age=age):
                 task = self.task()
                 task.sync_enabled = task.holding = True
                 task.fault = None
                 task.payload_pose = Pose()
-                task.model_stamp = 10.0
+                task.model_stamp = 10.0 - age
                 task.grasp_center = np.zeros(3)
                 task.local_payload_center = Mock(return_value=np.array([drift, 0, 0]))
                 task.bilateral_contact = Mock(return_value=contact)

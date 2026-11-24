@@ -12,10 +12,11 @@ import rclpy
 from action_msgs.msg import GoalStatus
 from arm_control.trajectory import ACTION_NAME, trajectory_goal, wait_for_future
 from arm_description import GRIPPER_JOINT_NAMES, JOINT_NAMES
+from arm_description.model import RobotModel
 from arm_description.resources import load_yaml
 from control_msgs.action import FollowJointTrajectory
 from control_msgs.msg import JointTolerance
-from gazebo_msgs.msg import ContactsState, ModelStates
+from gazebo_msgs.msg import ContactsState, LinkStates
 from gazebo_msgs.srv import DeleteEntity, GetEntityState, SpawnEntity
 from moveit_msgs.action import ExecuteTrajectory
 from moveit_msgs.msg import MoveItErrorCodes
@@ -31,6 +32,20 @@ from .shelf_scene import OBJECT_ID, ShelfScene, scene_diff
 from .shelf_task import ShelfTask
 
 
+def pose_transform(pose):
+    """Convert a Gazebo world pose to a homogeneous transform."""
+    p, q = pose.position, pose.orientation
+    x, y, z, w = q.x, q.y, q.z, q.w
+    transform = np.eye(4)
+    transform[:3, :3] = [
+        [1 - 2*(y*y + z*z), 2*(x*y - z*w), 2*(x*z + y*w)],
+        [2*(x*y + z*w), 1 - 2*(x*x + z*z), 2*(y*z - x*w)],
+        [2*(x*z - y*w), 2*(y*z + x*w), 1 - 2*(x*x + y*y)],
+    ]
+    transform[:3, 3] = [p.x, p.y, p.z]
+    return transform
+
+
 class GazeboShelfTask(ShelfTask):
     def __init__(self):
         super().__init__(ShelfScene(load_yaml("arm_moveit_config", "config/shelf_pick_place.yaml")))
@@ -42,6 +57,13 @@ class GazeboShelfTask(ShelfTask):
         self.physics = self.scene.config["physics"]
         self.payload_pose = None
         self.model_stamp = None
+        self.payload_center = None
+        self.tool_tilt = 0.0
+        self.world_links = ()
+        self.link_generation = 0
+        # Gazebo merges the fixed TCP/palm links into link_6. Derive that
+        # constant offset from the URDF rather than duplicating tool dimensions.
+        self.wrist_to_tcp = RobotModel.load(root_frame="link_6").tcp_transform([0.0] * len(JOINT_NAMES))
         self.last_contact = {side: -math.inf for side in ("left", "right")}
         self.contact_forces = {side: 0.0 for side in self.last_contact}
         self.holding = False
@@ -54,8 +76,8 @@ class GazeboShelfTask(ShelfTask):
         self.task_running = True
         self.stage = "initializing"
         self.report = self.create_publisher(String, "/shelf_grasp/status", 10)
-        self.model_subscription = self.create_subscription(
-            ModelStates, "/gazebo/model_states", self.on_models, qos_profile_sensor_data)
+        self.link_subscription = self.create_subscription(
+            LinkStates, "/gazebo/link_states", self.on_links, qos_profile_sensor_data)
         self.contact_subscriptions = [self.create_subscription(
             ContactsState, f"/gripper/{side}_contacts",
             lambda message, side=side: self.on_contact(side, message), qos_profile_sensor_data,
@@ -68,10 +90,22 @@ class GazeboShelfTask(ShelfTask):
     def now(self):
         return self.get_clock().now().nanoseconds / 1e9
 
-    def on_models(self, message):
-        if OBJECT_ID in message.name:
-            self.payload_pose = message.pose[message.name.index(OBJECT_ID)]
-            self.model_stamp = self.now()
+    def on_links(self, message):
+        self.world_links = tuple(message.name)
+        self.link_generation += 1
+        wrist_name, payload_name = "arm_sim::link_6", f"{OBJECT_ID}::{OBJECT_ID}"
+        if wrist_name not in message.name or payload_name not in message.name:
+            return  # Keep the last timestamp so missing feedback expires.
+        wrist = message.pose[message.name.index(wrist_name)]
+        payload = message.pose[message.name.index(payload_name)]
+        # Both poses come from the same physics update. Mixing model_states
+        # with the latest joint_states makes sensor delay look like payload slip.
+        tcp = pose_transform(wrist) @ self.wrist_to_tcp
+        self.tool_tilt = math.acos(float(np.clip(-tcp[2, 2], -1.0, 1.0)))
+        p = payload.position
+        self.payload_center = tcp[:3, :3].T @ (np.array([p.x, p.y, p.z]) - tcp[:3, 3])
+        self.payload_pose = payload
+        self.model_stamp = self.now()
 
     def on_contact(self, side, message):
         samples = []
@@ -99,18 +133,16 @@ class GazeboShelfTask(ShelfTask):
         return obj
 
     def local_payload_center(self):
-        if self.latest_joints is None or self.payload_pose is None:
-            raise RuntimeError("Missing robot or payload state.")
-        positions = dict(zip(self.latest_joints.name, self.latest_joints.position))
-        tcp = self.model.tcp_transform([positions[name] for name in JOINT_NAMES])
-        p = self.payload_pose.position
-        return tcp[:3, :3].T @ (np.array([p.x, p.y, p.z]) - tcp[:3, 3])
+        if self.payload_center is None or self.now() - self.model_stamp > self.physics["contact_timeout"]:
+            raise RuntimeError("Missing or stale synchronized wrist/payload feedback.")
+        return self.payload_center.copy()
 
     def monitor(self):
         if not self.sync_enabled or self.payload_pose is None:
             return
         if not self.ownership.resume():
             return
+        drift = None
         if self.holding and self.fault is None:
             if self.now() - self.model_stamp > self.physics["contact_timeout"]:
                 self.fault = "Gazebo payload feedback stopped."
@@ -133,6 +165,8 @@ class GazeboShelfTask(ShelfTask):
         self.report.publish(String(data=json.dumps({
             "stage": self.stage, "holding": self.holding, "fault": self.fault,
             "payload": [p.x, p.y, p.z], "finger_forces": self.contact_forces,
+            "grasp_drift": None if drift is None else float(drift),
+            "tool_tilt": self.tool_tilt if self.holding else None,
         })))
         if not self.task_running and self.sync_future is None:
             self.ownership.release()
@@ -211,14 +245,48 @@ class GazeboShelfTask(ShelfTask):
             rclpy.spin_once(self, timeout_sec=0.05)
         return future.result()
 
+    def wait_for_models(self, present, names=None):
+        """Wait for a physics snapshot confirming the whole scene transition."""
+        generation = self.link_generation
+        expected = set(self.models if names is None else names)
+        deadline = time.monotonic() + 10
+        while True:
+            found = {name for name in expected
+                     if any(link.startswith(f"{name}::") for link in self.world_links)}
+            ready = found == expected if present else not found
+            if self.link_generation > generation and ready:
+                return
+            if time.monotonic() >= deadline:
+                action = "creating" if present else "removing"
+                raise RuntimeError(f"Gazebo did not confirm {action} the demo scene.")
+            rclpy.spin_once(self, timeout_sec=0.05)
+
     def spawn_scene(self):
-        # Reset only these demo models, never the robot or unrelated world models.
-        for name, xml in self.models.items():
+        # Confirm the scene itself, not just the factory's replies. Retry
+        # setup only, before planning or motion.
+        for attempt in range(3):
+            try:
+                self.reset_scene()
+                return
+            except RuntimeError as error:
+                if attempt == 2:
+                    raise
+                self.get_logger().warning(f"Scene reset incomplete: {error}; retrying before motion.")
+
+    def reset_scene(self):
+        # Remove the payload before its supports, then finish all removals
+        # before reusing model names. A service reply alone is not a scene snapshot.
+        for name in reversed(self.models):
             state = self.call(GetEntityState, "/gazebo/get_entity_state", GetEntityState.Request(name=name))
             if state.success:
                 result = self.call(DeleteEntity, "/delete_entity", DeleteEntity.Request(name=name))
                 if not result.success:
                     raise RuntimeError(f"Cannot reset {name}: {result.status_message}")
+        self.wait_for_models(present=False)
+        self.payload_pose = self.payload_center = self.model_stamp = None
+        self.last_contact = dict.fromkeys(self.last_contact, -math.inf)
+        self.contact_forces = dict.fromkeys(self.contact_forces, 0.0)
+        for name, xml in self.models.items():
             request = SpawnEntity.Request(name=name, xml=xml)
             request.initial_pose.orientation.w = 1.0
             if name == OBJECT_ID:
@@ -227,9 +295,19 @@ class GazeboShelfTask(ShelfTask):
             response = self.call(SpawnEntity, "/spawn_entity", request)
             if not response.success:
                 raise RuntimeError(f"Cannot spawn {name}: {response.status_message}")
+            # The factory can reply before the model's links are initialized.
+            # Finish that insertion before sending the next factory request.
+            self.wait_for_models(present=True, names=(name,))
+        found = {name for name in self.models
+                 if any(link.startswith(f"{name}::") for link in self.world_links)}
+        if found != set(self.models):
+            raise RuntimeError("Gazebo removed a model while creating the demo scene.")
         self.advance(self.physics["settle_time"])
-        if self.payload_pose is None:
-            raise RuntimeError("Gazebo did not publish the spawned payload.")
+        if self.payload_pose is None or self.now() - self.model_stamp > self.physics["contact_timeout"]:
+            raise RuntimeError("Gazebo did not publish fresh feedback for the spawned payload.")
+        p = self.payload_pose.position
+        if np.linalg.norm(np.array([p.x, p.y, p.z]) - self.scene.pick_center) > self.physics["max_grasp_drift"]:
+            raise RuntimeError("Spawned payload did not settle at the shelf pick position.")
 
     def squeeze(self):
         if not self.gripper.wait_for_server(timeout_sec=20):
