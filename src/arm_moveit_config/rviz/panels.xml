@@ -1,4 +1,8 @@
 <library path="pick_place_panel">
+  <class name="arm_moveit_config/WarehousePanel"
+         type="arm_moveit_config::WarehousePanel" base_class_type="rviz_common::Panel">
+    <description>Factory order fulfillment and stock rearrangement.</description>
+  </class>
   <class name="arm_moveit_config/PickPlacePanel"
          type="arm_moveit_config::PickPlacePanel" base_class_type="rviz_common::Panel">
     <description>Run the existing shelf-to-box pick-and-place task.</description>

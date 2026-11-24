@@ -88,6 +88,17 @@ class TaskActionTest(unittest.TestCase):
         self.assertEqual(options["perception_overrides"], server.perception_options)
         self.assertFalse(options["use_global_arguments"])
 
+    def test_factory_result_keeps_the_completed_order_display_after_cleanup(self):
+        server, handle, worker = self.server(), self.handle(), self.worker()
+        server.warehouse = True
+        worker.move_count = 6
+        server.worker_factory = Mock(return_value=worker)
+        server.validate_motion = lambda goal: goal_motion(goal, warehouse=True)
+        result = PickPlaceServer.execute(server, handle)
+        self.assertTrue(result.success)
+        self.assertIn("6 parts verified, 6 physical moves", result.message)
+        self.assertEqual(worker.report_progress.call_args.args, ("succeeded", "orders_complete", 6, 6))
+
     def test_cancel_is_terminal_only_after_cleanup(self):
         server, handle, worker = self.server(), self.handle(), self.worker()
         server.busy = True

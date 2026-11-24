@@ -8,7 +8,7 @@ from arm_control.trajectory import wait_for_future
 from arm_description import GRIPPER_JOINT_NAMES, JOINT_NAMES
 from arm_description.model import RobotModel
 from arm_description.resources import load_yaml
-from arm_moveit_config.shelf_scene import OBJECT_ID, TOUCH_LINKS, ShelfScene, scene_diff
+from arm_moveit_config.shelf_scene import OBJECT_ID, TOUCH_LINKS, scene_diff
 from geometry_msgs.msg import PoseStamped
 from moveit_msgs.action import ExecuteTrajectory
 from moveit_msgs.msg import (
@@ -38,7 +38,7 @@ class ShelfTask(Node):
         self.stage = "initializing"
         for key, value in scene.motion.items():
             self.declare_parameter(f"motion.{key}", value)
-        self.scene = ShelfScene({**scene.config, "motion": {
+        self.scene = type(scene)({**scene.config, "motion": {
             key: self.get_parameter(f"motion.{key}").value for key in scene.motion
         }})
         self.model = RobotModel.load()
@@ -196,16 +196,17 @@ class ShelfTask(Node):
         return planned
 
     def set_finger_contact(self, allowed):
+        object_id = getattr(self, "object_id", OBJECT_ID)
         request = GetPlanningScene.Request(components=PlanningSceneComponents(
             components=PlanningSceneComponents.ALLOWED_COLLISION_MATRIX))
         matrix = self.call(GetPlanningScene, "/get_planning_scene", request).scene.allowed_collision_matrix
-        for name in [OBJECT_ID, *TOUCH_LINKS]:
+        for name in [object_id, *TOUCH_LINKS]:
             if name not in matrix.entry_names:
                 matrix.entry_names.append(name)
                 for row in matrix.entry_values:
                     row.enabled.append(False)
                 matrix.entry_values.append(AllowedCollisionEntry(enabled=[False] * len(matrix.entry_names)))
-        obj_index = matrix.entry_names.index(OBJECT_ID)
+        obj_index = matrix.entry_names.index(object_id)
         for link in TOUCH_LINKS:
             index = matrix.entry_names.index(link)
             matrix.entry_values[obj_index].enabled[index] = allowed

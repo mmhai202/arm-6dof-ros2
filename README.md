@@ -15,15 +15,16 @@ Requires Miniforge/Miniconda with `conda` on `PATH`. Run from the workspace root
 ```bash
 ./scripts/run_moveit.sh              # Manual control in RViz
 ./scripts/run_moveit.sh --pick-place # Shelf-to-box pick-and-place
+./scripts/run_moveit.sh --warehouse  # Factory color sorting
 ```
 
-Use **Plan & Execute** for manual control, or **Run Pick & Place** / **Stop**
-for the demo. Gazebo runs in the background. The demo uses an RGB-D camera
-to locate the randomly placed orange block before picking it.
+Use **Plan & Execute**, **Run Pick & Place**, or **Start Orders** in RViz.
+Use **Stop** to cancel a demo. Gazebo runs in the background.
 
-Demo settings: [shelf_pick_place.yaml](src/arm_moveit_config/config/shelf_pick_place.yaml).
+Demo settings: [pick-and-place](src/arm_moveit_config/config/shelf_pick_place.yaml)
+and [warehouse](src/arm_moveit_config/config/warehouse.yaml).
 
-![Robot simulation demo](tests/demo.png)
+![Factory order fulfillment](tests/warehouse.png)
 
 ## Tests
 

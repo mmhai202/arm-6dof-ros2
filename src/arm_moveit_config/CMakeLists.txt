@@ -21,6 +21,7 @@ install(TARGETS pick_place_panel LIBRARY DESTINATION lib)
 
 ament_python_install_package(${PROJECT_NAME})
 install(PROGRAMS scripts/shelf_pick_place.py scripts/pick_place_server.py
+  scripts/warehouse_task.py scripts/warehouse_server.py scripts/warehouse_display.py
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY config launch rviz
@@ -36,6 +37,7 @@ if(BUILD_TESTING)
     ENV PYTHONDONTWRITEBYTECODE=1 ARM_RUN_MOVEIT_TESTS=0
       ARM_RUN_GAZEBO_TESTS=0 ARM_RUN_GAZEBO_GRASP_TESTS=0 ARM_RUN_TASK_ACTION_TESTS=0
       ARM_RUN_PERCEPTION_TESTS=0
+      ARM_RUN_WAREHOUSE_TESTS=0
     TIMEOUT 60
     GENERATE_RESULT_FOR_RETURN_CODE_ZERO
   )

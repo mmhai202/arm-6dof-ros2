@@ -244,7 +244,8 @@ echo '# mock workspace overlay' > install/setup.bash
         setup.parent.mkdir(exist_ok=True)
         setup.write_text("# mock workspace overlay\n")
         for package, launch in (("arm_moveit_config", "moveit.launch.py"),
-                                ("arm_moveit_config", "shelf_pick_place.launch.py")):
+                                ("arm_moveit_config", "shelf_pick_place.launch.py"),
+                                ("arm_moveit_config", "warehouse.launch.py")):
             path = self.root / "install" / package / "share" / package / "launch" / launch
             path.parent.mkdir(parents=True, exist_ok=True)
             path.touch()
@@ -279,12 +280,13 @@ echo '# mock workspace overlay' > install/setup.bash
         for options, launch in (
             ((), "moveit.launch.py"),
             (("--pick-place",), "shelf_pick_place.launch.py"),
+            (("--warehouse",), "warehouse.launch.py"),
         ):
             with self.subTest(options=options):
                 self.run_script("run_moveit.sh", *options)
                 calls = self.log.read_text()
                 self.assertIn(f"arm_moveit_config {launch}", calls)
-                if "--pick-place" in options:
+                if options:
                     self.assertIn("task_mode:=scene", calls)
                 else:
                     self.assertNotIn("task_mode:=", calls)
@@ -299,7 +301,7 @@ echo '# mock workspace overlay' > install/setup.bash
         self.env["CONDA_EXE"] = "/missing/conda"
         for flag in ("--headless", "--gazebo-gui", "--scene-only", "--plan-only", "--unknown"):
             with self.subTest(flag=flag):
-                output = self.run_script("run_moveit.sh", "--pick-place", flag, expected=1)
+                output = self.run_script("run_moveit.sh", "--warehouse", flag, expected=1)
                 self.assertIn(f"Unknown option: {flag}", output)
                 self.assertFalse(self.log.exists())
 

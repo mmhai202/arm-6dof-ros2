@@ -37,6 +37,8 @@ def scene_diff():
 
 
 class ShelfScene:
+    object_id = OBJECT_ID
+
     def __init__(self, config=None):
         self.config = config or load_yaml("arm_moveit_config", "config/shelf_pick_place.yaml")
         self.frame = self.config["frame"]
@@ -65,13 +67,13 @@ class ShelfScene:
             raise ValueError("Payload width must fit the gripper's 40–90 mm opening.")
 
     def payload(self, center, frame=None):
-        return collision_box(OBJECT_ID, self.config["object"]["size"], center, frame or self.frame)
+        return collision_box(self.object_id, self.config["object"]["size"], center, frame or self.frame)
 
     def attachment(self, *, remove=False):
         # TCP +Z points down; the payload remains below it by a known grasp offset.
         obj = self.payload([0, 0, self.offset], "tcp")
         if remove:
-            obj = CollisionObject(id=OBJECT_ID, operation=CollisionObject.REMOVE)
+            obj = CollisionObject(id=self.object_id, operation=CollisionObject.REMOVE)
         return AttachedCollisionObject(link_name="tcp", object=obj, touch_links=TOUCH_LINKS)
 
     def attach(self):

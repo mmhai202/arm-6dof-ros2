@@ -28,38 +28,48 @@ MOTION_FIELDS = (
 )
 
 
-def goal_motion(goal):
-    config = load_yaml("arm_moveit_config", "config/shelf_pick_place.yaml")
+def goal_motion(goal, *, warehouse=False):
+    config = load_yaml("arm_moveit_config", "config/warehouse.yaml" if warehouse else "config/shelf_pick_place.yaml")
     overrides = {} if goal.use_default_motion else {
         key: getattr(goal, key) for key in MOTION_FIELDS
     }
     config["motion"].update(overrides)
-    ShelfScene(config)  # Reject invalid settings before ownership or motion.
+    if warehouse:
+        from .warehouse_scene import WarehouseScene
+        WarehouseScene(config)
+    else:
+        ShelfScene(config)  # Reject invalid settings before ownership or motion.
     return overrides
 
 
 class PickPlaceServer(Node):
-    def __init__(self):
-        super().__init__("shelf_pick_place_server")
+    def __init__(self, *, warehouse=False):
+        super().__init__("warehouse_order_server" if warehouse else "shelf_pick_place_server")
+        self.warehouse = warehouse
+        if warehouse:
+            from .warehouse_task import WarehouseTask
+            self.worker_factory = WarehouseTask
+        self.validate_motion = lambda goal: goal_motion(goal, warehouse=warehouse)
         self.stopping = threading.Event()
         self.gate = threading.Lock()
         self.busy = False
         self.blocked = False
-        defaults = load_yaml("arm_moveit_config", "config/shelf_pick_place.yaml")["perception"]
+        defaults = load_yaml("arm_moveit_config", "config/warehouse.yaml" if warehouse else "config/shelf_pick_place.yaml")["perception"]
         self.perception_options = {}
         for parameter, key in PERCEPTION_PARAMETERS.items():
             self.declare_parameter(parameter, defaults[key])
             self.perception_options[key] = self.get_parameter(parameter).value
+        action_name = "/warehouse_order" if warehouse else ACTION_NAME
         self.server = ActionServer(
-            self, PickPlace, ACTION_NAME, self.execute,
+            self, PickPlace, action_name, self.execute,
             callback_group=ReentrantCallbackGroup(), goal_callback=self.accept_goal,
             cancel_callback=lambda handle: CancelResponse.ACCEPT,
         )
-        self.get_logger().info(f"Pick-and-place Action ready: {ACTION_NAME}")
+        self.get_logger().info(f"Task Action ready: {action_name}")
 
     def accept_goal(self, request):
         try:
-            goal_motion(request)
+            getattr(self, "validate_motion", goal_motion)(request)
         except (ValueError, TypeError, KeyError) as error:
             self.get_logger().warning(f"Rejected task settings: {error}")
             return GoalResponse.REJECT
@@ -88,7 +98,8 @@ class PickPlaceServer(Node):
             # The server's executor handles goals/cancel requests. Only this
             # callback spins the worker node, so its existing ROS waits remain
             # single-threaded and never re-enter the Action server executor.
-            task = GazeboShelfTask(motion_overrides=goal_motion(handle.request),
+            task = getattr(self, "worker_factory", GazeboShelfTask)(
+                                   motion_overrides=getattr(self, "validate_motion", goal_motion)(handle.request),
                                    perception_overrides=self.perception_options,
                                    use_global_arguments=False,
                                    node_name=f"shelf_task_{uuid.uuid4().hex[:8]}")
@@ -101,6 +112,8 @@ class PickPlaceServer(Node):
             task.check_cancel()
             if task.fault:
                 raise RuntimeError(task.fault)
+            if getattr(self, "warehouse", False):
+                result.message = f"Color sorting complete: 6 parts verified, {task.move_count} physical moves."
         except TaskCanceled as error:
             result.success = False
             result.error_code = PickPlace.Result.CANCELED
@@ -124,6 +137,8 @@ class PickPlaceServer(Node):
                         if not result.success:
                             task.retain_after_failure(result.message)
                         task.stop_sync()
+                        if getattr(self, "warehouse", False) and result.success:
+                            task.report_progress("succeeded", "orders_complete", 6, 6)
             except Exception as error:
                 self.blocked = True
                 result.success = False
@@ -162,9 +177,9 @@ class PickPlaceServer(Node):
         return result
 
 
-def main():
+def main(*, warehouse=False):
     rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
-    node = PickPlaceServer()
+    node = PickPlaceServer(warehouse=warehouse)
     executor = MultiThreadedExecutor(num_threads=2)
     executor.add_node(node)
 

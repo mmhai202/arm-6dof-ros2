@@ -1,0 +1,71 @@
+# Factory cell: two color-matched boxes and an open tray for green parts.
+frame: base_footprint
+shelf:
+  center_xy: [0.52, 0.20]
+  size_xy: [0.40, 0.48]
+  surface_z: 0.42
+  top_z: 0.82
+  thickness: 0.02
+object:
+  size: [0.06, 0.04, 0.04]
+  center_xy: [0.43, 0.05]
+box:
+  center_xy: [-0.43, -0.25]
+  size_xy: [0.28, 0.26]
+  base_z: 0.22
+  height: 0.07
+  thickness: 0.012
+motion:
+  gripper_open: 0.025
+  tcp_gap: 0.03
+  approach: 0.075
+  # Low extraction makes the front row a physical obstacle to rear-row stock.
+  lift: 0.025
+  withdraw_clearance: 0.12
+  transfer_z: 0.62
+  place_clearance: 0.015
+  velocity_scale: 0.45
+  acceleration_scale: 0.40
+  cartesian_step: 0.005
+  planning_time: 6.0
+perception:
+  enabled: true
+  pose_topic: /warehouse/unused_single_pose
+  timeout: 15.0
+  max_age: 0.7
+  clock_tolerance: 0.15
+  stable_samples: 3
+  max_spread: 0.005
+  randomize_spawn: true
+  spawn_seed: -1
+  spawn_xy_bounds: [[0.43, 0.56], [0.05, 0.35]]
+physics:
+  mass: 0.10
+  friction: 2.0
+  grip_compression: 0.006
+  min_contact_force: 0.2
+  max_grasp_drift: 0.018
+  contact_timeout: 0.5
+  settle_time: 1.5
+  placement_hold_time: 0.4
+  placement_timeout: 8.0
+  placement_linear_speed: 0.01
+  placement_angular_speed: 0.1
+warehouse:
+  # These are fixture slots, not sensor-derived grasp positions.
+  lanes_y: [0.05, 0.20, 0.35]
+  rows_x: [0.43, 0.56]
+  spawn_jitter: 0.003
+  association_distance: 0.025
+  placement_xy_tolerance: 0.018
+  buffer:
+    centers: [[0.12, -0.43], [0.27, -0.43]]
+    surface_z: 0.22
+    size_xy: [0.12, 0.14]
+  orders:
+    - id: A
+      center_xy: [-0.43, -0.25]
+      colors: [blue, blue]
+    - id: B
+      center_xy: [-0.43, 0.12]
+      colors: [red, red]

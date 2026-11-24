@@ -29,12 +29,24 @@ class PickPlacePanel : public rviz_common::Panel
   using GoalHandle = rclcpp_action::ClientGoalHandle<Action>;
 
 public:
-  explicit PickPlacePanel(QWidget * parent = nullptr) : rviz_common::Panel(parent)
+  explicit PickPlacePanel(QWidget * parent = nullptr, bool warehouse = false) : rviz_common::Panel(parent)
   {
     auto * layout = new QVBoxLayout(this);
+    if (warehouse) {
+      auto * title = new QLabel("Factory", this);
+      title->setStyleSheet("font-size: 17px; font-weight: bold; color: #38c9cb; margin: 8px 0;");
+      layout->addWidget(title);
+      auto * orders = new QLabel(
+        "Blue box: 2 blue\nRed box: 2 red\nGreen tray: 2 green", this);
+      orders->setWordWrap(true);
+      layout->addWidget(orders);
+    }
     settings_ = new QWidget(this);
     auto * form = new QFormLayout(settings_);
-    start_ = new QPushButton("Run Pick && Place", this);
+    start_ = new QPushButton(warehouse ? "Start Orders" : "Run Pick && Place", this);
+    if (warehouse) {
+      start_->setStyleSheet("padding: 10px; background: #167d83; color: white; font-weight: bold;");
+    }
     stop_ = new QPushButton("Stop", this);
     progress_ = new QProgressBar(this);
     status_ = new QLabel("Waiting for the pick-and-place server...", this);
@@ -50,7 +62,8 @@ public:
 
     try {
       const auto share = ament_index_cpp::get_package_share_directory("arm_moveit_config");
-      const auto defaults = YAML::LoadFile(share + "/config/shelf_pick_place.yaml")["motion"];
+      const auto defaults = YAML::LoadFile(share +
+        (warehouse ? "/config/warehouse.yaml" : "/config/shelf_pick_place.yaml"))["motion"];
       auto add_input = [this, form, &defaults](const char * label, const char * key,
           double Goal::* field, const char * suffix, double scale, double minimum,
           double maximum, double step) {
@@ -85,7 +98,7 @@ public:
 
     node_ = std::make_shared<rclcpp::Node>(
       "pick_place_panel", rclcpp::NodeOptions().use_global_arguments(false));
-    client_ = rclcpp_action::create_client<Action>(node_, "/shelf_pick_place");
+    client_ = rclcpp_action::create_client<Action>(node_, warehouse ? "/warehouse_order" : "/shelf_pick_place");
     executor_.add_node(node_);
     timer_ = new QTimer(this);
     connect(timer_, &QTimer::timeout, this, [this]() {
@@ -161,8 +174,9 @@ private:
     options.feedback_callback = [this](GoalHandle::SharedPtr,
         const std::shared_ptr<const Action::Feedback> feedback) {
         if (!stop_requested_) {
-          status_->setText(QString("%1: %2 (%3/%4)")
-            .arg(QString::fromStdString(feedback->phase), QString::fromStdString(feedback->stage))
+        status_->setText(QString("%1: %2 (%3/%4)")
+            .arg(QString::fromStdString(feedback->phase),
+              QString::fromStdString(feedback->stage).replace('_', ' '))
             .arg(feedback->completed_stages).arg(feedback->total_stages));
         }
         progress_->setRange(0, static_cast<int>(feedback->total_stages));
@@ -237,6 +251,13 @@ private:
   bool cancel_sent_ = false;
 };
 
+class WarehousePanel : public PickPlacePanel
+{
+public:
+  explicit WarehousePanel(QWidget * parent = nullptr) : PickPlacePanel(parent, true) {}
+};
+
 }  // namespace arm_moveit_config
 
 PLUGINLIB_EXPORT_CLASS(arm_moveit_config::PickPlacePanel, rviz_common::Panel)
+PLUGINLIB_EXPORT_CLASS(arm_moveit_config::WarehousePanel, rviz_common::Panel)

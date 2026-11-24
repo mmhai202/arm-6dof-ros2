@@ -16,7 +16,6 @@ from arm_control.trajectory import (
 )
 from arm_description import GRIPPER_JOINT_NAMES, JOINT_NAMES
 from arm_description.model import RobotModel
-from arm_description.resources import load_yaml
 from control_msgs.action import FollowJointTrajectory
 from control_msgs.msg import JointTolerance
 from gazebo_msgs.msg import ContactsState, LinkStates
@@ -60,10 +59,12 @@ def pose_transform(pose):
 
 class GazeboShelfTask(ShelfTask):
     def __init__(self, *, motion_overrides=None, use_global_arguments=True,
-                 node_name="shelf_pick_place", perception_overrides=None):
-        config = load_yaml("arm_moveit_config", "config/shelf_pick_place.yaml")
+                 node_name="shelf_pick_place", perception_overrides=None, scene=None):
+        if scene is None:
+            scene = ShelfScene()
+        config = copy.deepcopy(scene.config)
         config["motion"].update(motion_overrides or {})
-        super().__init__(ShelfScene(config), use_global_arguments=use_global_arguments,
+        super().__init__(type(scene)(config), use_global_arguments=use_global_arguments,
                          node_name=node_name)
         self.scene.config["perception"].update(perception_overrides or {})
         for parameter, key in PERCEPTION_PARAMETERS.items():
@@ -152,7 +153,8 @@ class GazeboShelfTask(ShelfTask):
     def on_links(self, message):
         self.world_links = tuple(message.name)
         self.link_generation += 1
-        wrist_name, payload_name = "arm_sim::link_6", f"{OBJECT_ID}::{OBJECT_ID}"
+        object_id = getattr(self, "object_id", OBJECT_ID)
+        wrist_name, payload_name = "arm_sim::link_6", f"{object_id}::{object_id}"
         if wrist_name not in message.name or payload_name not in message.name:
             return  # Keep the last timestamp so missing feedback expires.
         wrist = message.pose[message.name.index(wrist_name)]
@@ -171,7 +173,7 @@ class GazeboShelfTask(ShelfTask):
     def on_contact(self, side, message):
         samples = []
         for state in message.states:
-            if any(name.split("::")[0] == OBJECT_ID
+            if any(name.split("::")[0] == getattr(self, "object_id", OBJECT_ID)
                    for name in (state.collision1_name, state.collision2_name)):
                 f = state.total_wrench.force
                 samples.append(math.sqrt(f.x*f.x + f.y*f.y + f.z*f.z))
@@ -408,9 +410,10 @@ class GazeboShelfTask(ShelfTask):
         for name, xml in self.models.items():
             request = SpawnEntity.Request(name=name, xml=xml)
             request.initial_pose.orientation.w = 1.0
-            if name == OBJECT_ID:
+            spawn_positions = getattr(self.scene, "spawn_positions", {OBJECT_ID: self.spawn_center})
+            if name in spawn_positions:
                 p = request.initial_pose.position
-                p.x, p.y, p.z = map(float, self.spawn_center)
+                p.x, p.y, p.z = map(float, spawn_positions[name])
             response = self.call(SpawnEntity, "/spawn_entity", request)
             if not response.success:
                 raise RuntimeError(f"Cannot spawn {name}: {response.status_message}")
@@ -597,14 +600,14 @@ class GazeboShelfTask(ShelfTask):
         self.monitor()
 
 
-def main(argv=None):
+def main(argv=None, task_factory=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=("scene", "plan", "execute"))
     parser.add_argument("--once", action="store_true", help="Exit after the task instead of maintaining scene synchronization.")
     args, ros_args = parser.parse_known_args(argv)
     # SIGINT must reach Python without tearing down ROS before cancellation.
     rclpy.init(args=ros_args, signal_handler_options=SignalHandlerOptions.NO)
-    node = GazeboShelfTask()
+    node = (task_factory or GazeboShelfTask)()
     result = 0
     try:
         # Rejected contenders must never reset models or retain/modify the scene.

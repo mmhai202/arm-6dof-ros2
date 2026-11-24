@@ -14,7 +14,7 @@ def _text(parent, tag, value):
     ET.SubElement(parent, tag).text = str(value)
 
 
-def _box_link(model, obj, *, mass=None, friction=0.8, visual_suffix=""):
+def _box_link(model, obj, *, mass=None, friction=0.8, visual_suffix="", color=None):
     size = obj.primitives[0].dimensions
     pose = obj.primitive_poses[0].position
     link = ET.SubElement(model, "link", name=obj.id)
@@ -45,11 +45,11 @@ def _box_link(model, obj, *, mass=None, friction=0.8, visual_suffix=""):
             for key, value in (("kp", 100000), ("kd", 100), ("max_vel", 0.1), ("min_depth", 0.0005)):
                 _text(contact, key, value)
         else:
-            color = "0.95 0.20 0.06 1" if mass is not None else (
-                "0.12 0.42 0.70 1" if obj.id.startswith("box_") else "0.58 0.35 0.16 1")
+            rgba = color or ("0.95 0.20 0.06 1" if mass is not None else (
+                "0.12 0.42 0.70 1" if obj.id.startswith("box_") else "0.58 0.35 0.16 1"))
             material = ET.SubElement(element, "material")
-            _text(material, "ambient", color)
-            _text(material, "diffuse", color)
+            _text(material, "ambient", rgba)
+            _text(material, "diffuse", rgba)
 
 
 def gazebo_models(scene):
@@ -64,18 +64,24 @@ def gazebo_models(scene):
         raise ValueError("Payload must leave enough gripper travel to squeeze before the stop.")
     if physics["placement_hold_time"] >= physics["placement_timeout"]:
         raise ValueError("physics.placement_timeout must exceed physics.placement_hold_time.")
-    roots = {name: ET.Element("sdf", version="1.6") for name in (ENVIRONMENT_ID, OBJECT_ID)}
+    dynamic_ids = getattr(scene, "dynamic_ids", (OBJECT_ID,))
+    roots = {name: ET.Element("sdf", version="1.6") for name in (ENVIRONMENT_ID, *dynamic_ids)}
     models = {name: ET.SubElement(root, "model", name=name) for name, root in roots.items()}
     visual_suffix = "_" + uuid.uuid4().hex[:12]
     _text(models[ENVIRONMENT_ID], "static", "true")
-    _text(models[OBJECT_ID], "static", "false")
-    for obj in scene.initial().world.collision_objects:
+    for name in dynamic_ids:
+        _text(models[name], "static", "false")
+    initial = scene.initial()
+    colors = {item.id: " ".join(str(getattr(item.color, axis)) for axis in "rgba")
+              for item in initial.object_colors} if hasattr(scene, "dynamic_ids") else {}
+    for obj in initial.world.collision_objects:
         if obj.id.startswith("perception_camera_"):
             continue  # The static camera model owns these boxes in Gazebo.
-        if obj.id == OBJECT_ID:
-            _box_link(models[OBJECT_ID], obj, mass=physics["mass"], friction=physics["friction"], visual_suffix=visual_suffix)
+        if obj.id in dynamic_ids:
+            _box_link(models[obj.id], obj, mass=physics["mass"], friction=physics["friction"],
+                      visual_suffix=visual_suffix, color=colors.get(obj.id))
         else:
-            _box_link(models[ENVIRONMENT_ID], obj, visual_suffix=visual_suffix)
+            _box_link(models[ENVIRONMENT_ID], obj, visual_suffix=visual_suffix, color=colors.get(obj.id))
     return {name: ET.tostring(root, encoding="unicode") for name, root in roots.items()}
 
 
@@ -104,8 +110,9 @@ def payload_in_box(scene, position, tolerance=0.01, *, orientation=None):
         if (abs(getattr(position, axis) - box["center_xy"][index]) + half[index]
                 > box["size_xy"][index] / 2 - box["thickness"]):
             return False
-    return (abs(position.z - half[2] - box["thickness"]) <= tolerance
-            and position.z + half[2] <= box["height"] + tolerance)
+    bottom = box.get("base_z", 0.0)
+    return (abs(position.z - half[2] - bottom - box["thickness"]) <= tolerance
+            and position.z + half[2] <= bottom + box["height"] + tolerance)
 
 
 def payload_is_settled(scene, pose, twist):

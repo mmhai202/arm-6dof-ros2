@@ -1,0 +1,148 @@
+Panels:
+- Class: arm_moveit_config/WarehousePanel
+  Name: Factory Orders
+- Class: rviz_common/Displays
+  Name: Displays
+  Property Tree Widget:
+    Expanded:
+    - /Global Options1
+    - /TF1
+    Splitter Ratio: 0.5
+  Tree Height: 720
+- Class: rviz_common/Views
+  Name: Views
+Visualization Manager:
+  Class: ''
+  Displays:
+  - Alpha: 0.35
+    Cell Size: 1
+    Class: rviz_default_plugins/Grid
+    Color: 160; 160; 160
+    Enabled: false
+    Line Style:
+      Line Width: 0.03
+      Value: Lines
+    Name: Grid
+    Plane: XY
+    Plane Cell Count: 24
+    Reference Frame: <Fixed Frame>
+    Value: false
+  - Alpha: 1
+    Class: rviz_default_plugins/RobotModel
+    Collision Enabled: false
+    Description Source: Topic
+    Description Topic:
+      Depth: 5
+      Durability Policy: Transient Local
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /robot_description
+    Enabled: true
+    Name: Robot Model
+    TF Prefix: ''
+    Update Interval: 0
+    Value: true
+    Visual Enabled: true
+  - Class: rviz_default_plugins/MarkerArray
+    Enabled: true
+    Name: Factory Environment
+    Topic:
+      Value: /warehouse/environment
+      Reliability Policy: Reliable
+      Durability Policy: Transient Local
+      History Policy: Keep Last
+      Depth: 1
+    Value: true
+  - Class: rviz_default_plugins/MarkerArray
+    Enabled: true
+    Name: Factory Parts
+    Topic:
+      Value: /warehouse/parts
+      Reliability Policy: Reliable
+      Durability Policy: Transient Local
+      History Policy: Keep Last
+      Depth: 1
+    Value: true
+  - Class: rviz_default_plugins/MarkerArray
+    Enabled: true
+    Name: Camera Model
+    Topic:
+      Value: /perception/camera_markers
+      Reliability Policy: Reliable
+      Durability Policy: Transient Local
+      History Policy: Keep Last
+      Depth: 1
+    Value: true
+  - Class: rviz_default_plugins/Image
+    Enabled: true
+    Name: Perception Camera
+    Topic:
+      Value: /perception/debug_image
+      Reliability Policy: Best Effort
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Depth: 2
+    Value: true
+  - Class: rviz_default_plugins/Marker
+    Enabled: true
+    Name: Camera Target
+    Topic:
+      Value: /perception/object_marker
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Depth: 5
+    Value: true
+  - Class: rviz_default_plugins/TF
+    Enabled: false
+    Frame Timeout: 15
+    Marker Scale: 0.18
+    Name: TF
+    Show Arrows: true
+    Show Axes: true
+    Show Names: true
+    Update Interval: 0
+    Value: true
+  - Class: rviz_default_plugins/MarkerArray
+    Enabled: true
+    Name: Factory Signage
+    Topic:
+      Value: /warehouse/markers
+      Reliability Policy: Reliable
+      Durability Policy: Transient Local
+      History Policy: Keep Last
+      Depth: 1
+    Value: true
+  Enabled: true
+  Global Options:
+    Background Color: 24; 30; 38
+    Default Light: true
+    Fixed Frame: base_footprint
+    Frame Rate: 60
+  Name: root
+  Tools:
+  - Class: rviz_default_plugins/Interact
+  - Class: rviz_default_plugins/MoveCamera
+  - Class: rviz_default_plugins/Select
+  - Class: rviz_default_plugins/FocusCamera
+  - Class: rviz_default_plugins/Measure
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 3.4
+      Focal Point:
+        X: 0.08
+        Y: 0.08
+        Z: 0.44
+      Near Clip Distance: 0.01
+      Pitch: 0.57
+      Target Frame: base_footprint
+      Value: Orbit (rviz)
+      Yaw: 4.05
+Window Geometry:
+  Hide Left Dock: false
+  Hide Right Dock: false
+  Height: 1000
+  Width: 1600
+  QMainWindow State: 000000ff00000000fd0000000100000000000001b800000368fc0200000002fc0000003e000001fd0000003801000020fa000000000200000003fb0000001c0046006100630074006f007200790020004f007200640065007200730100000000ffffffff0000001700fffffffb000000100044006900730070006c0061007900730100000000ffffffff0000001700fffffffb0000000a005600690065007700730100000000ffffffff0000001700fffffffb0000002200500065007200630065007000740069006f006e002000430061006d0065007200610100000241000001650000001700ffffff0000041e0000036800000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
