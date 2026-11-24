@@ -17,6 +17,7 @@ class SceneOwnership:
         self.token = uuid.uuid4().hex
         self.held = False
         self.superseded = False
+        self.pending = False
 
     def _acquire(self):
         if not self.held:
@@ -32,17 +33,40 @@ class SceneOwnership:
         if not self._acquire():
             return False
         self.stream.seek(0)
-        self.stream.truncate()
-        self.stream.write(self.token)
-        self.stream.flush()
+        if self.stream.read().startswith("unacknowledged:"):
+            self.release()
+            raise RuntimeError(
+                "Previous planning-scene update was not acknowledged. Stop all simulation "
+                f"processes, restart MoveIt, then clear {self.stream.name} before retrying.")
+        self._write(self.token)
+        self.pending = False
         return True
+
+    def _write(self, value):
+        self.stream.seek(0)
+        self.stream.truncate()
+        self.stream.write(value)
+        self.stream.flush()
+
+    def quarantine(self):
+        """Preserve an uncertain write across process exit; never unlink the lock."""
+        if self.held:
+            self.pending = True
+            self._write(f"unacknowledged:{self.token}")
+
+    def acknowledge(self):
+        if self.held:
+            self.stream.seek(0)
+            if self.stream.read() == f"unacknowledged:{self.token}":
+                self._write(self.token)
+                self.pending = False
 
     def resume(self):
         """An idle owner may synchronize until another task claims the scene."""
         if self.superseded or not self._acquire():
             return False
         self.stream.seek(0)
-        if self.stream.read() != self.token:
+        if self.stream.read() not in (self.token, f"unacknowledged:{self.token}"):
             self.superseded = True
             self.release()
             return False

@@ -7,6 +7,10 @@ These tests move the arm and temporarily spawn a falling cube.
 
 import math
 import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
 import time
 import unittest
 import uuid
@@ -14,6 +18,7 @@ import uuid
 
 ENABLED = os.environ.get("ARM_RUN_GAZEBO_TESTS") == "1"
 if ENABLED:
+    from ament_index_python.packages import get_package_prefix
     from arm_control.poses import load_named_poses
     from arm_control.trajectory import trajectory_goal
     from arm_description import JOINT_NAMES
@@ -75,6 +80,48 @@ class GazeboPhysicsTest(unittest.TestCase):
         response = self.call(GetEntityState, "/gazebo/get_entity_state", GetEntityState.Request(name=name))
         self.assertTrue(response.success, name)
         return response.state
+
+    def cli_command(self, pose):
+        script = Path(get_package_prefix("arm_control")) / "lib/arm_control/send_trajectory_goal.py"
+        return [sys.executable, str(script), "--pose", pose, "--duration", "10"]
+
+    def assert_arm_holds(self):
+        self.advance(0.5)
+        stopped = dict(zip(self.joints.name, self.joints.position))
+        self.advance(1.0)
+        current = dict(zip(self.joints.name, self.joints.position))
+        for name in JOINT_NAMES:
+            self.assertAlmostEqual(current[name], stopped[name], delta=0.01, msg=name)
+
+    def test_cli_interrupt_cancels_controller_motion(self):
+        self.wait_for(lambda: self.joints is not None)
+        before = dict(zip(self.joints.name, self.joints.position))
+        process = subprocess.Popen(self.cli_command("ready"), stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT, text=True)
+        try:
+            def moving():
+                current = dict(zip(self.joints.name, self.joints.position))
+                return max(abs(current[name] - before[name]) for name in JOINT_NAMES) > 0.04
+
+            self.wait_for(lambda: process.poll() is not None or moving(), timeout=15)
+            self.assertIsNone(process.poll(), "CLI exited before motion could be interrupted")
+            process.send_signal(signal.SIGINT)
+            output, _ = process.communicate(timeout=10)
+            self.assertEqual(process.returncode, 130, output)
+            self.assertNotIn("could not confirm", output.lower())
+            self.assert_arm_holds()
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.communicate(timeout=5)
+
+    def test_cli_timeout_cancels_controller_motion(self):
+        process = subprocess.run(self.cli_command("home") + ["--result-timeout", "0.1"],
+                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                 text=True, timeout=15)
+        self.assertEqual(process.returncode, 1, process.stdout)
+        self.assertIn("Cancellation confirmed", process.stdout)
+        self.assert_arm_holds()
 
     def test_effort_controllers_track_and_hold_against_gravity(self):
         controllers = self.call(ListControllers, "/controller_manager/list_controllers", ListControllers.Request())

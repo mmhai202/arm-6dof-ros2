@@ -2,6 +2,7 @@
 
 import threading
 
+from action_msgs.msg import GoalStatus
 from arm_description import JOINT_NAMES
 from builtin_interfaces.msg import Duration
 from control_msgs.action import FollowJointTrajectory
@@ -39,6 +40,20 @@ def wait_for_future(future, timeout, *, node=None):
     return future.result()
 
 
+def cancel_trajectory(handle, *, node=None, timeout=3.0):
+    """Request cancellation and confirm a terminal result within bounded waits."""
+    try:
+        result = handle.get_result_async()
+        if not result.done():
+            wait_for_future(handle.cancel_goal_async(), timeout, node=node)
+        response = wait_for_future(result, timeout, node=node)
+        return response.status in (
+            GoalStatus.STATUS_SUCCEEDED, GoalStatus.STATUS_CANCELED, GoalStatus.STATUS_ABORTED,
+        )
+    except (TimeoutError, RuntimeError):
+        return False
+
+
 def execute_trajectory(client, goal, server_timeout, result_timeout, *, node=None):
     """Return (success, message); callbacks use the already-running executor."""
     if not goal.trajectory.points:
@@ -54,7 +69,13 @@ def execute_trajectory(client, goal, server_timeout, result_timeout, *, node=Non
     try:
         result = wait_for_future(handle.get_result_async(), result_timeout, node=node).result
     except TimeoutError:
-        return False, "Timed out while waiting for trajectory execution."
+        stopped = cancel_trajectory(handle, node=node)
+        detail = "Cancellation confirmed." if stopped else "Could not confirm cancellation."
+        return False, f"Timed out while waiting for trajectory execution. {detail}"
+    except KeyboardInterrupt:
+        if not cancel_trajectory(handle, node=node):
+            raise RuntimeError("Interrupted, but could not confirm trajectory cancellation.")
+        raise
     if result.error_code != FollowJointTrajectory.Result.SUCCESSFUL:
         return False, (
             f"Trajectory failed. error_code={result.error_code}, "

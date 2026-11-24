@@ -27,10 +27,13 @@ public:
     auto * settings = new QWidget(this);
     auto * form = new QFormLayout(settings);
     auto * start = new QPushButton("Run Pick && Place", this);
+    auto * stop = new QPushButton("Stop", this);
+    stop->setEnabled(false);
     auto * status = new QLabel("Adjust motion settings, then click to run the full cycle.", this);
     status->setWordWrap(true);
     layout->addWidget(settings);
     layout->addWidget(start);
+    layout->addWidget(stop);
     layout->addWidget(status);
     layout->addStretch();
     process_ = new QProcess(this);
@@ -82,8 +85,16 @@ public:
       }
       process_->setArguments(arguments);
       task_error_.clear();
+      stop_requested_ = false;
       status->setText("Planning and running the pick-and-place cycle...");
       process_->start();
+    });
+    connect(process_, &QProcess::started, this, [stop]() {stop->setEnabled(true);});
+    connect(stop, &QPushButton::clicked, this, [this, stop, status]() {
+      stop_requested_ = true;
+      stop->setEnabled(false);
+      status->setText("Stopping; waiting for motion cancellation...");
+      requestStop();
     });
     connect(process_, &QProcess::readyReadStandardOutput, this, [this, status]() {
       while (process_->canReadLine()) {
@@ -93,7 +104,7 @@ public:
         const QString error_marker = "Physical task stopped: ";
         const auto stage_offset = line.indexOf(stage_marker);
         const auto error_offset = line.indexOf(error_marker);
-        if (stage_offset >= 0) {
+        if (stage_offset >= 0 && !stop_requested_) {
           status->setText("Running: " + line.mid(stage_offset + stage_marker.size()));
         }
         if (error_offset >= 0) {
@@ -102,15 +113,22 @@ public:
       }
     });
     connect(process_, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
-      [this, start, status, settings](int code, QProcess::ExitStatus exit_status) {
+      [this, start, stop, status, settings](int code, QProcess::ExitStatus exit_status) {
         start->setEnabled(true);
+        stop->setEnabled(false);
         settings->setEnabled(true);
-        status->setText(code == 0 && exit_status == QProcess::NormalExit ?
-          "Complete. Click to run again." : (task_error_.isEmpty() ?
-          "Task stopped. See the terminal for details." : "Stopped: " + task_error_));
+        if (stop_requested_ && code == 130 && exit_status == QProcess::NormalExit) {
+          status->setText("Stopped by user. Click to run again.");
+        } else if (code == 0 && exit_status == QProcess::NormalExit) {
+          status->setText("Complete. Click to run again.");
+        } else {
+          status->setText(task_error_.isEmpty() ?
+            "Task stopped. See the terminal for details." : "Stopped: " + task_error_);
+        }
       });
     connect(process_, &QProcess::errorOccurred, this,
-      [this, start, status, settings](QProcess::ProcessError error) {
+      [this, start, stop, status, settings](QProcess::ProcessError error) {
+        stop->setEnabled(false);
         if (error == QProcess::FailedToStart) {
           status->setText(process_->errorString());
           start->setEnabled(true);
@@ -123,13 +141,8 @@ public:
   {
     if (process_->state() != QProcess::NotRunning) {
       // Send SIGINT directly to the task so it can cancel its active trajectory.
-      const auto pid = process_->processId();
-      if (pid > 0) {
-        ::kill(static_cast<pid_t>(pid), SIGINT);
-      } else {
-        process_->kill();
-      }
-      if (!process_->waitForFinished(5000)) {
+      requestStop();
+      if (!process_->waitForFinished(12000)) {
         process_->kill();
         process_->waitForFinished(1000);
       }
@@ -137,6 +150,14 @@ public:
   }
 
 private:
+  void requestStop()
+  {
+    const auto pid = process_->processId();
+    if (pid > 0) {
+      ::kill(static_cast<pid_t>(pid), SIGINT);
+    }
+  }
+
   struct MotionInput
   {
     QString parameter;
@@ -146,6 +167,7 @@ private:
   std::vector<MotionInput> inputs_;
   QProcess * process_;
   QString task_error_;
+  bool stop_requested_ = false;
 };
 
 }  // namespace arm_moveit_config

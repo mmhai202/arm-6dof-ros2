@@ -10,7 +10,7 @@ import time
 import numpy as np
 import rclpy
 from action_msgs.msg import GoalStatus
-from arm_control.trajectory import ACTION_NAME, trajectory_goal, wait_for_future
+from arm_control.trajectory import ACTION_NAME, cancel_trajectory, trajectory_goal, wait_for_future
 from arm_description import GRIPPER_JOINT_NAMES, JOINT_NAMES
 from arm_description.model import RobotModel
 from arm_description.resources import load_yaml
@@ -24,12 +24,16 @@ from moveit_msgs.srv import ApplyPlanningScene
 from rclpy.action import ActionClient
 from rclpy.executors import ExternalShutdownException
 from rclpy.qos import qos_profile_sensor_data
+from rclpy.signals import SignalHandlerOptions
 from std_msgs.msg import String
 
-from .gazebo_scene import gazebo_models, payload_in_box
+from .gazebo_scene import gazebo_models, payload_is_settled
 from .scene_ownership import SceneOwnership
 from .shelf_scene import OBJECT_ID, ShelfScene, scene_diff
 from .shelf_task import ShelfTask
+
+
+SCENE_SYNC_TIMEOUT = 5.0
 
 
 def pose_transform(pose):
@@ -56,6 +60,7 @@ class GazeboShelfTask(ShelfTask):
         self.models = gazebo_models(self.scene)
         self.physics = self.scene.config["physics"]
         self.payload_pose = None
+        self.payload_twist = None
         self.model_stamp = None
         self.payload_center = None
         self.tool_tilt = 0.0
@@ -72,6 +77,7 @@ class GazeboShelfTask(ShelfTask):
         self.fault = None
         self.sync_enabled = False
         self.sync_future = None
+        self.sync_started = None
         self.ownership = SceneOwnership()
         self.task_running = True
         self.stage = "initializing"
@@ -105,6 +111,8 @@ class GazeboShelfTask(ShelfTask):
         p = payload.position
         self.payload_center = tcp[:3, :3].T @ (np.array([p.x, p.y, p.z]) - tcp[:3, 3])
         self.payload_pose = payload
+        index = message.name.index(payload_name)
+        self.payload_twist = message.twist[index] if index < len(message.twist) else None
         self.model_stamp = self.now()
 
     def on_contact(self, side, message):
@@ -137,11 +145,18 @@ class GazeboShelfTask(ShelfTask):
             raise RuntimeError("Missing or stale synchronized wrist/payload feedback.")
         return self.payload_center.copy()
 
+    def check_sync_timeout(self):
+        if self.sync_future is not None and time.monotonic() - self.sync_started > SCENE_SYNC_TIMEOUT:
+            self.sync_enabled = False
+            self.ownership.quarantine()
+            raise TimeoutError("Planning-scene synchronization was not acknowledged within 5 seconds.")
+
     def monitor(self):
         if not self.sync_enabled or self.payload_pose is None:
             return
         if not self.ownership.resume():
             return
+        self.check_sync_timeout()
         drift = None
         if self.holding and self.fault is None:
             if self.now() - self.model_stamp > self.physics["contact_timeout"]:
@@ -159,6 +174,8 @@ class GazeboShelfTask(ShelfTask):
             # A dedicated asynchronous client avoids recursive spinning in timers.
             diff = scene_diff()
             diff.world.collision_objects = [self.measured_payload()]
+            self.sync_started = time.monotonic()
+            self.ownership.quarantine()
             self.sync_future = self.sync_client.call_async(ApplyPlanningScene.Request(scene=diff))
             self.sync_future.add_done_callback(self.on_sync_done)
         p = self.payload_pose.position
@@ -175,9 +192,12 @@ class GazeboShelfTask(ShelfTask):
         if self.sync_future is not future:
             return
         try:
-            if not future.result().success:
+            response = future.result()
+            self.ownership.acknowledge()
+            if not response.success:
                 self.fault = "MoveIt rejected payload synchronization."
         except Exception as error:
+            self.sync_enabled = False
             self.fault = f"Payload synchronization failed: {error}"
         finally:
             self.sync_future = None
@@ -197,9 +217,11 @@ class GazeboShelfTask(ShelfTask):
         if future is not None:
             # Keep ownership until MoveIt acknowledges the last write. A timeout
             # must not release the lock with an update still in flight.
-            rclpy.spin_until_future_complete(self, future)
+            rclpy.spin_until_future_complete(self, future, timeout_sec=SCENE_SYNC_TIMEOUT)
             if not future.done():
-                raise RuntimeError("ROS stopped before the last scene update was acknowledged.")
+                self.ownership.quarantine()
+                raise RuntimeError("Last planning-scene update was not acknowledged within 5 seconds; "
+                                   "scene ownership is quarantined until acknowledgement or recovery.")
             # The executor may have queued the done callback for a later spin.
             self.on_sync_done(future)
 
@@ -227,6 +249,34 @@ class GazeboShelfTask(ShelfTask):
             raise RuntimeError("Gazebo simulation clock is not advancing.")
         if self.fault:
             raise RuntimeError(self.fault)
+
+    def wait_for_placement(self):
+        """Require fresh, consecutive physics samples of a stationary landed body."""
+        timeout = self.physics["placement_timeout"]
+        deadline = self.now() + timeout
+        wall_deadline = time.monotonic() + max(30, timeout * 5)
+        stable_since = last_stamp = None
+        while self.now() < deadline and time.monotonic() < wall_deadline:
+            if self.fault:
+                raise RuntimeError(self.fault)
+            stamp = self.model_stamp
+            fresh = stamp is not None and 0 <= self.now() - stamp < self.physics["contact_timeout"]
+            if not fresh:
+                stable_since = None
+            elif last_stamp is None or stamp > last_stamp:
+                if last_stamp is not None and stamp - last_stamp >= self.physics["contact_timeout"]:
+                    stable_since = None
+                last_stamp = stamp
+                if payload_is_settled(self.scene, self.payload_pose, self.payload_twist):
+                    if stable_since is None:
+                        stable_since = stamp
+                    if stamp - stable_since >= self.physics["placement_hold_time"]:
+                        return
+                else:
+                    stable_since = None
+            rclpy.spin_once(self, timeout_sec=0.05)
+        raise RuntimeError("Release failed: payload did not remain stationary inside the box "
+                           "with fresh Gazebo feedback.")
 
     def wait_simulation_result(self, future, timeout):
         """Allow slow physics to finish while detecting a stopped simulation clock."""
@@ -284,6 +334,7 @@ class GazeboShelfTask(ShelfTask):
                     raise RuntimeError(f"Cannot reset {name}: {result.status_message}")
         self.wait_for_models(present=False)
         self.payload_pose = self.payload_center = self.model_stamp = None
+        self.payload_twist = None
         self.last_contact = dict.fromkeys(self.last_contact, -math.inf)
         self.contact_forces = dict.fromkeys(self.contact_forces, 0.0)
         for name, xml in self.models.items():
@@ -327,9 +378,11 @@ class GazeboShelfTask(ShelfTask):
             raise RuntimeError("Gripper rejected the squeeze command.")
         try:
             result = self.wait_simulation_result(handle.get_result_async(), 15)
-        except (TimeoutError, KeyboardInterrupt):
+        except (TimeoutError, RuntimeError, KeyboardInterrupt):
             if rclpy.ok(context=self.context):
-                wait_for_future(handle.cancel_goal_async(), 5, node=self)
+                self.hold_arm()
+                if not cancel_trajectory(handle, node=self):
+                    raise RuntimeError("Could not confirm gripper cancellation.")
             raise
         if result.result.error_code != FollowJointTrajectory.Result.SUCCESSFUL:
             raise RuntimeError(f"Gripper failed: {result.result.error_string}")
@@ -395,9 +448,11 @@ class GazeboShelfTask(ShelfTask):
                 raise RuntimeError(self.fault)
             if result.status != GoalStatus.STATUS_SUCCEEDED or result.result.error_code.val != MoveItErrorCodes.SUCCESS:
                 raise RuntimeError(f"MoveIt execution failed: {result.result.error_code.val}.")
-        except (TimeoutError, KeyboardInterrupt):
+        except (TimeoutError, RuntimeError, KeyboardInterrupt):
             if rclpy.ok(context=self.context):
-                wait_for_future(handle.cancel_goal_async(), 5, node=self)
+                self.hold_arm()
+                if not cancel_trajectory(handle, node=self):
+                    raise RuntimeError("Could not confirm MoveIt cancellation; arm hold requested.")
             raise
         finally:
             self.active_goal = None
@@ -434,8 +489,7 @@ class GazeboShelfTask(ShelfTask):
                 self.get_logger().info("Verified physical lift with bilateral contact and free payload motion.")
             if name == "release_gripper":
                 self.advance(self.physics["settle_time"])
-                if not payload_in_box(self.scene, self.payload_pose.position):
-                    raise RuntimeError("Release failed: physical payload did not settle inside the box.")
+                self.wait_for_placement()
         self.stage = "success"
         self.monitor()
         self.get_logger().info("SUCCESS: contact-only grasp lifted the free Gazebo payload and released it inside the box.")
@@ -444,6 +498,10 @@ class GazeboShelfTask(ShelfTask):
         self.fault = str(error)
         self.stage = "failed"
         self.holding = False
+        # Never issue another scene write while the previous one is uncertain.
+        if self.sync_future is not None or self.ownership.pending:
+            self.sync_enabled = False
+            return
         self.sync_enabled = True
         if self.payload_pose is not None:
             diff = self.scene.detach([0, 0, 0])
@@ -457,7 +515,8 @@ def main(argv=None):
     parser.add_argument("--mode", choices=("scene", "plan", "execute"))
     parser.add_argument("--once", action="store_true", help="Exit after the task instead of maintaining scene synchronization.")
     args, ros_args = parser.parse_known_args(argv)
-    rclpy.init(args=ros_args)
+    # SIGINT must reach Python without tearing down ROS before cancellation.
+    rclpy.init(args=ros_args, signal_handler_options=SignalHandlerOptions.NO)
     node = GazeboShelfTask()
     result = 0
     try:
@@ -475,15 +534,24 @@ def main(argv=None):
             node.idle()
             while rclpy.ok(context=node.context) and not node.ownership.superseded:
                 rclpy.spin_once(node, timeout_sec=0.2)
+                # The ROS timer stops with /clock; enforce the service deadline
+                # from this wall-clock loop as well.
+                node.check_sync_timeout()
+                if node.fault and node.ownership.pending and node.sync_future is None:
+                    raise RuntimeError(node.fault)
     except (RuntimeError, TimeoutError, ValueError) as error:
         node.get_logger().error(str(error))
         result = 1
     except (KeyboardInterrupt, ExternalShutdownException):
-        pass
+        result = 130
     finally:
         try:
             if rclpy.ok(context=node.context):
-                node.stop_sync()
+                try:
+                    node.stop_sync()
+                except (RuntimeError, TimeoutError) as error:
+                    node.get_logger().error(str(error))
+                    result = 1
         finally:
             node.destroy_node()
             node.ownership.close()

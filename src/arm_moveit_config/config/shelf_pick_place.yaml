@@ -35,3 +35,7 @@ physics:
   max_grasp_drift: 0.018
   contact_timeout: 0.5
   settle_time: 1.5
+  placement_hold_time: 0.4
+  placement_timeout: 8.0
+  placement_linear_speed: 0.01
+  placement_angular_speed: 0.1

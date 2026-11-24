@@ -17,6 +17,7 @@ ARM_BASE_DEPENDENCIES=(
   'ros-humble-ros-base'
   'ros-humble-ament-cmake'
   'ros-humble-ament-cmake-python'
+  'ros-humble-ament-cmake-test'
   'ros-humble-ament-index-python'
   'ros-humble-rclpy'
   'ros-humble-launch'

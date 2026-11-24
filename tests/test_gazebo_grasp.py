@@ -15,13 +15,13 @@ try:
     from arm_control.trajectory import trajectory_goal
     from arm_description import GRIPPER_JOINT_NAMES, JOINT_NAMES
     from arm_description.resources import load_yaml, package_file
-    from arm_moveit_config.gazebo_scene import ENVIRONMENT_ID, gazebo_models, payload_in_box
+    from arm_moveit_config.gazebo_scene import ENVIRONMENT_ID, gazebo_models, payload_in_box, payload_is_settled
     from arm_moveit_config.gazebo_task import GazeboShelfTask, main
     from arm_moveit_config.scene_ownership import SceneOwnership
     from arm_moveit_config.shelf_scene import OBJECT_ID, ShelfScene
     from gazebo_msgs.msg import ContactsState, ContactState, LinkStates
     from gazebo_msgs.srv import DeleteEntity, GetEntityState, SpawnEntity
-    from geometry_msgs.msg import Point, Pose, Vector3, Wrench
+    from geometry_msgs.msg import Point, Pose, Quaternion, Twist, Vector3, Wrench
     from rclpy.executors import ExternalShutdownException
     from sensor_msgs.msg import JointState
 except ImportError as exc:
@@ -81,6 +81,65 @@ class PhysicalSceneTest(unittest.TestCase):
         p.x += 0.2
         self.assertFalse(payload_in_box(self.scene, p))
 
+    def test_placement_checks_rotated_bounds_and_rejects_invalid_feedback(self):
+        p = Point(x=self.scene.config["box"]["center_xy"][0] + 0.102,
+                  y=self.scene.config["box"]["center_xy"][1], z=0.035)
+        self.assertFalse(payload_in_box(self.scene, p))
+        yaw = Quaternion(z=2**-0.5, w=2**-0.5)
+        self.assertTrue(payload_in_box(self.scene, p, orientation=yaw))
+        self.assertFalse(payload_in_box(self.scene, p, orientation=Quaternion()))
+        p.x = float("nan")
+        self.assertFalse(payload_in_box(self.scene, p))
+
+    def test_moving_or_spinning_payload_cannot_count_as_settled(self):
+        pose = Pose(position=Point(x=-0.45, y=-0.25, z=0.035), orientation=Quaternion(w=1.0))
+        self.assertTrue(payload_is_settled(self.scene, pose, Twist()))
+        for twist in (Twist(linear=Vector3(x=0.02)), Twist(angular=Vector3(z=0.2)),
+                      Twist(linear=Vector3(z=float("nan"))), None):
+            with self.subTest(twist=twist):
+                self.assertFalse(payload_is_settled(self.scene, pose, twist))
+
+
+class PlacementFeedbackTest(unittest.TestCase):
+    def task(self):
+        scene = ShelfScene()
+        scene.config["physics"].update(placement_hold_time=0.25, placement_timeout=1.0)
+        task = SimpleNamespace(
+            scene=scene, physics=scene.config["physics"], fault=None, clock=0.0,
+            model_stamp=0.0, payload_twist=Twist(),
+            payload_pose=Pose(position=Point(x=-0.45, y=-0.25, z=0.035),
+                              orientation=Quaternion(w=1.0)),
+        )
+        task.now = lambda: task.clock
+        return task
+
+    def test_requires_multiple_consecutive_stationary_samples(self):
+        task = self.task()
+
+        def receive(*args, **kwargs):
+            task.clock += 0.1
+            task.model_stamp = task.clock
+            # An intervening movement must restart the stability interval.
+            task.payload_twist.linear.x = 0.1 if task.clock < 0.21 else 0.0
+
+        with patch("arm_moveit_config.gazebo_task.rclpy.spin_once", side_effect=receive):
+            GazeboShelfTask.wait_for_placement(task)
+        self.assertGreaterEqual(task.clock, 0.55)
+
+    def test_stale_or_missing_feedback_never_counts_as_stable(self):
+        for missing in (False, True):
+            with self.subTest(missing=missing):
+                task = self.task()
+                if missing:
+                    task.model_stamp = None
+
+                def receive(*args, **kwargs):
+                    task.clock += 0.1
+
+                with patch("arm_moveit_config.gazebo_task.rclpy.spin_once", side_effect=receive):
+                    with self.assertRaisesRegex(RuntimeError, "fresh Gazebo feedback"):
+                        GazeboShelfTask.wait_for_placement(task)
+
 
 class ControllerCommandTest(unittest.TestCase):
     def test_arm_goal_preserves_waypoints_and_normalizes_rounded_durations(self):
@@ -124,6 +183,21 @@ class ControllerCommandTest(unittest.TestCase):
 
 
 class ShutdownTest(unittest.TestCase):
+    def test_idle_sync_deadline_does_not_depend_on_a_simulation_timer(self):
+        with patch("arm_moveit_config.gazebo_task.rclpy") as ros, \
+                patch("arm_moveit_config.gazebo_task.GazeboShelfTask") as task_class, \
+                patch("arm_moveit_config.gazebo_task.time.monotonic", return_value=6.0):
+            node = task_class.return_value
+            node.ownership.superseded = False
+            node.sync_future = Future()
+            node.sync_started = 0.0
+            # Use the real deadline check; no timer callback is delivered.
+            node.check_sync_timeout.side_effect = lambda: GazeboShelfTask.check_sync_timeout(node)
+            self.assertEqual(main(["--mode", "scene"]), 1)
+            ros.spin_once.assert_called_once()
+            node.ownership.quarantine.assert_called_once()
+            node.stop_sync.assert_called_once()
+
     def test_superseded_idle_process_exits_and_closes_ownership(self):
         with patch("arm_moveit_config.gazebo_task.rclpy") as ros, \
                 patch("arm_moveit_config.gazebo_task.GazeboShelfTask") as task:
@@ -151,7 +225,8 @@ class ShutdownTest(unittest.TestCase):
                     patch("arm_moveit_config.gazebo_task.GazeboShelfTask") as task:
                 ros.ok.return_value = False
                 task.return_value.run.side_effect = error
-                self.assertEqual(main(["--mode", "execute", "--once"]), 0)
+                expected = 0 if isinstance(error, TimeoutError) else 130
+                self.assertEqual(main(["--mode", "execute", "--once"]), expected)
                 task.return_value.retain_after_failure.assert_not_called()
                 task.return_value.destroy_node.assert_called_once()
                 ros.try_shutdown.assert_called_once()
@@ -341,6 +416,8 @@ class ContactGateTest(unittest.TestCase):
                 task = self.task()
                 task.sync_enabled = task.holding = True
                 task.fault = None
+                task.sync_future = None
+                task.check_sync_timeout = lambda: GazeboShelfTask.check_sync_timeout(task)
                 task.payload_pose = Pose()
                 task.model_stamp = 10.0 - age
                 task.grasp_center = np.zeros(3)
@@ -376,6 +453,7 @@ class SceneHandoffTest(unittest.TestCase):
             sync_client=Mock(call_async=Mock(return_value=self.future)), report=Mock(),
         )
         self.task.on_sync_done = lambda future: GazeboShelfTask.on_sync_done(self.task, future)
+        self.task.check_sync_timeout = lambda: GazeboShelfTask.check_sync_timeout(self.task)
 
     def test_new_task_waits_for_old_update_and_old_writer_cannot_resume(self):
         GazeboShelfTask.monitor(self.task)
@@ -403,7 +481,8 @@ class SceneHandoffTest(unittest.TestCase):
         self.task.task_running = True
         GazeboShelfTask.monitor(self.task)
 
-        def acknowledge(node, future):
+        def acknowledge(node, future, *, timeout_sec):
+            self.assertEqual(timeout_sec, 5.0)
             self.assertFalse(self.new.claim())
             self.assertFalse(node.sync_enabled)
             future.set_result(SimpleNamespace(success=True))
@@ -444,6 +523,37 @@ class SceneHandoffTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "acknowledged"):
                 GazeboShelfTask.idle(self.task)
         self.assertFalse(self.new.claim())
+
+    def test_timeout_quarantines_scene_after_process_exit(self):
+        GazeboShelfTask.monitor(self.task)
+        with patch("arm_moveit_config.gazebo_task.time.monotonic", return_value=self.task.sync_started + 6):
+            with self.assertRaisesRegex(TimeoutError, "not acknowledged"):
+                GazeboShelfTask.monitor(self.task)
+        self.old.close()
+        with self.assertRaisesRegex(RuntimeError, "restart MoveIt"):
+            self.new.claim()
+
+    def test_pending_update_stays_quarantined_if_process_exits_before_timeout(self):
+        GazeboShelfTask.monitor(self.task)
+        self.old.close()
+        with self.assertRaisesRegex(RuntimeError, "not acknowledged"):
+            self.new.claim()
+
+    def test_service_exception_preserves_uncertainty_and_stops_sync(self):
+        GazeboShelfTask.monitor(self.task)
+        self.future.set_exception(RuntimeError("transport lost"))
+        self.assertFalse(self.task.sync_enabled)
+        self.assertIn("transport lost", self.task.fault)
+        with self.assertRaisesRegex(RuntimeError, "not acknowledged"):
+            self.new.claim()
+
+    def test_late_acknowledgement_clears_quarantine_before_handoff(self):
+        GazeboShelfTask.monitor(self.task)
+        with patch("arm_moveit_config.gazebo_task.rclpy.spin_until_future_complete"):
+            with self.assertRaisesRegex(RuntimeError, "quarantined"):
+                GazeboShelfTask.stop_sync(self.task)
+        self.future.set_result(SimpleNamespace(success=True))
+        self.assertTrue(self.new.claim())
 
     def test_contention_times_out_without_claiming_the_scene(self):
         self.assertTrue(self.old.claim())

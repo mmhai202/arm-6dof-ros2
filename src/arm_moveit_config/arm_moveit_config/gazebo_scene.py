@@ -52,11 +52,14 @@ def gazebo_models(scene):
     """Return static fixtures and a free dynamic payload; no welds or grasp joints."""
     physics = scene.config["physics"]
     for key in ("mass", "friction", "grip_compression", "min_contact_force",
-                "max_grasp_drift", "contact_timeout", "settle_time"):
+                "max_grasp_drift", "contact_timeout", "settle_time", "placement_hold_time",
+                "placement_timeout", "placement_linear_speed", "placement_angular_speed"):
         if not math.isfinite(physics[key]) or physics[key] <= 0:
             raise ValueError(f"physics.{key} must be finite and positive.")
     if physics["grip_compression"] >= scene.gripper_closed:
         raise ValueError("Payload must leave enough gripper travel to squeeze before the stop.")
+    if physics["placement_hold_time"] >= physics["placement_timeout"]:
+        raise ValueError("physics.placement_timeout must exceed physics.placement_hold_time.")
     roots = {name: ET.Element("sdf", version="1.6") for name in (ENVIRONMENT_ID, OBJECT_ID)}
     models = {name: ET.SubElement(root, "model", name=name) for name, root in roots.items()}
     _text(models[ENVIRONMENT_ID], "static", "true")
@@ -69,11 +72,43 @@ def gazebo_models(scene):
     return {name: ET.tostring(root, encoding="unicode") for name, root in roots.items()}
 
 
-def payload_in_box(scene, position, tolerance=0.01):
+def payload_in_box(scene, position, tolerance=0.01, *, orientation=None):
+    """Check the rotated payload's bounds and its lowest point above the bottom."""
     box = scene.config["box"]
     size = scene.config["object"]["size"]
+    if orientation is None:
+        half = [value / 2 for value in size]
+    else:
+        q = [getattr(orientation, axis) for axis in "xyzw"]
+        norm = math.sqrt(sum(value * value for value in q))
+        if not math.isfinite(norm) or norm < 1e-12:
+            return False
+        x, y, z, w = (value / norm for value in q)
+        rotation = (
+            (1 - 2*(y*y + z*z), 2*(x*y - z*w), 2*(x*z + y*w)),
+            (2*(x*y + z*w), 1 - 2*(x*x + z*z), 2*(y*z - x*w)),
+            (2*(x*z - y*w), 2*(y*z + x*w), 1 - 2*(x*x + y*y)),
+        )
+        half = [sum(abs(value) * extent / 2 for value, extent in zip(row, size))
+                for row in rotation]
+    if not all(math.isfinite(getattr(position, axis)) for axis in "xyz"):
+        return False
     for index, axis in enumerate(("x", "y")):
-        if (abs(getattr(position, axis) - box["center_xy"][index]) + size[index] / 2
+        if (abs(getattr(position, axis) - box["center_xy"][index]) + half[index]
                 > box["size_xy"][index] / 2 - box["thickness"]):
             return False
-    return abs(position.z - (box["thickness"] + size[2] / 2)) <= tolerance
+    return (abs(position.z - half[2] - box["thickness"]) <= tolerance
+            and position.z + half[2] <= box["height"] + tolerance)
+
+
+def payload_is_settled(scene, pose, twist):
+    if pose is None or twist is None:
+        return False
+    if not payload_in_box(scene, pose.position, orientation=pose.orientation):
+        return False
+    for vector, key in ((twist.linear, "placement_linear_speed"),
+                        (twist.angular, "placement_angular_speed")):
+        speed = math.sqrt(sum(getattr(vector, axis)**2 for axis in "xyz"))
+        if not math.isfinite(speed) or speed > scene.config["physics"][key]:
+            return False
+    return True

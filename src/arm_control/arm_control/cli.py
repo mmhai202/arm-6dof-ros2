@@ -7,6 +7,7 @@ from control_msgs.action import FollowJointTrajectory
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.executors import ExternalShutdownException
+from rclpy.signals import SignalHandlerOptions
 from rclpy.utilities import remove_ros_args
 
 from .poses import add_target_arguments, load_named_poses, resolve_targets
@@ -39,7 +40,8 @@ def main():
         print(f"[error] {error}", file=sys.stderr)
         return 1
 
-    rclpy.init()
+    # Keep ROS alive while Ctrl+C cancels an accepted controller goal.
+    rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
     node = rclpy.create_node("arm_trajectory_demo_client")
     try:
         client = ActionClient(node, FollowJointTrajectory, ACTION_NAME)

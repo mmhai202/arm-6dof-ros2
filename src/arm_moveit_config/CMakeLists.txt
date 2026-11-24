@@ -22,4 +22,17 @@ install(DIRECTORY config launch rviz
   DESTINATION share/${PROJECT_NAME}
 )
 
+if(BUILD_TESTING)
+  find_package(ament_cmake_test REQUIRED)
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  ament_add_test(workspace_unit_tests
+    COMMAND "${Python3_EXECUTABLE}" -m unittest discover
+      -s "${CMAKE_CURRENT_SOURCE_DIR}/../../tests" -v
+    ENV PYTHONDONTWRITEBYTECODE=1 ARM_RUN_MOVEIT_TESTS=0
+      ARM_RUN_GAZEBO_TESTS=0 ARM_RUN_GAZEBO_GRASP_TESTS=0
+    TIMEOUT 60
+    GENERATE_RESULT_FOR_RETURN_CODE_ZERO
+  )
+endif()
+
 ament_package()
