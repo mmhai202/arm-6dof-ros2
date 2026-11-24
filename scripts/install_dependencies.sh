@@ -13,6 +13,7 @@ ARM_BASE_DEPENDENCIES=(
   'colcon-common-extensions'
   'numpy'
   'pyyaml'
+  'yaml-cpp'
   'ros-humble-ros-base'
   'ros-humble-ament-cmake'
   'ros-humble-ament-cmake-python'

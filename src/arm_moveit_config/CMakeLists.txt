@@ -7,10 +7,11 @@ find_package(ament_index_cpp REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(rviz_common REQUIRED)
 find_package(Qt5 REQUIRED COMPONENTS Widgets)
+find_package(yaml-cpp REQUIRED)
 
 add_library(pick_place_panel SHARED src/pick_place_panel.cpp)
 ament_target_dependencies(pick_place_panel ament_index_cpp pluginlib rviz_common)
-target_link_libraries(pick_place_panel Qt5::Widgets)
+target_link_libraries(pick_place_panel Qt5::Widgets yaml-cpp)
 pluginlib_export_plugin_description_file(rviz_common rviz/panels.xml)
 install(TARGETS pick_place_panel LIBRARY DESTINATION lib)
 

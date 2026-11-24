@@ -1,14 +1,19 @@
 #include <csignal>
+#include <vector>
 
 #include <QDebug>
+#include <QDoubleSpinBox>
+#include <QFormLayout>
 #include <QLabel>
 #include <QProcess>
 #include <QPushButton>
 #include <QVBoxLayout>
 
 #include <ament_index_cpp/get_package_prefix.hpp>
+#include <ament_index_cpp/get_package_share_directory.hpp>
 #include <pluginlib/class_list_macros.hpp>
 #include <rviz_common/panel.hpp>
+#include <yaml-cpp/yaml.h>
 
 namespace arm_moveit_config
 {
@@ -19,9 +24,12 @@ public:
   explicit PickPlacePanel(QWidget * parent = nullptr) : rviz_common::Panel(parent)
   {
     auto * layout = new QVBoxLayout(this);
+    auto * settings = new QWidget(this);
+    auto * form = new QFormLayout(settings);
     auto * start = new QPushButton("Run Pick && Place", this);
-    auto * status = new QLabel("Click to start the full pick-and-place cycle.", this);
+    auto * status = new QLabel("Adjust motion settings, then click to run the full cycle.", this);
     status->setWordWrap(true);
+    layout->addWidget(settings);
     layout->addWidget(start);
     layout->addWidget(status);
     layout->addStretch();
@@ -29,12 +37,50 @@ public:
     process_->setProcessChannelMode(QProcess::MergedChannels);
     const auto prefix = ament_index_cpp::get_package_prefix("arm_moveit_config");
     process_->setProgram(QString::fromStdString(prefix + "/lib/arm_moveit_config/shelf_pick_place.py"));
-    process_->setArguments({"--mode", "execute", "--once"});
-    connect(start, &QPushButton::clicked, this, [this, start, status]() {
+    try {
+      const auto share = ament_index_cpp::get_package_share_directory("arm_moveit_config");
+      const auto defaults = YAML::LoadFile(share + "/config/shelf_pick_place.yaml")["motion"];
+      auto add_input = [this, form, &defaults](const char * label, const char * key,
+          const char * suffix, double scale, double minimum, double maximum, double step) {
+          auto * input = new QDoubleSpinBox;
+          input->setDecimals(1);
+          input->setRange(minimum, maximum);
+          input->setSingleStep(step);
+          input->setSuffix(suffix);
+          input->setValue(defaults[key].as<double>() * scale);
+          input->setKeyboardTracking(false);
+          form->addRow(label, input);
+          inputs_.push_back({key, input, scale});
+          return input;
+        };
+      add_input("Speed", "velocity_scale", " %", 100.0, 1.0, 100.0, 5.0)
+        ->setToolTip("Percentage of the configured joint velocity limits.");
+      add_input("Acceleration", "acceleration_scale", " %", 100.0, 1.0, 100.0, 5.0)
+        ->setToolTip("Percentage of the configured joint acceleration limits.");
+      add_input("Approach distance", "approach", " mm", 1000.0, 1.0, 500.0, 10.0);
+      add_input("Lift distance", "lift", " mm", 1000.0, 1.0, 500.0, 10.0);
+      add_input("Shelf withdrawal", "withdraw_clearance", " mm", 1000.0, 0.0, 500.0, 10.0);
+      add_input("Transfer height", "transfer_z", " mm", 1000.0, 1.0, 1500.0, 10.0)
+        ->setToolTip("TCP height above the robot base when moving above the box.");
+      add_input("Release clearance", "place_clearance", " mm", 1000.0, 0.0, 100.0, 1.0)
+        ->setToolTip("Gap between the payload and the box bottom before release.");
+    } catch (const std::exception & error) {
+      status->setText("Cannot load motion settings: " + QString::fromUtf8(error.what()));
+      settings->setEnabled(false);
+      start->setEnabled(false);
+    }
+    connect(start, &QPushButton::clicked, this, [this, start, status, settings]() {
       if (process_->state() != QProcess::NotRunning) {
         return;
       }
       start->setEnabled(false);
+      settings->setEnabled(false);
+      QStringList arguments{"--mode", "execute", "--once", "--ros-args"};
+      for (const auto & input : inputs_) {
+        arguments << "-p" << QString("motion.%1:=%2").arg(
+          input.parameter, QString::number(input.widget->value() / input.scale, 'f', 6));
+      }
+      process_->setArguments(arguments);
       task_error_.clear();
       status->setText("Planning and running the pick-and-place cycle...");
       process_->start();
@@ -56,17 +102,19 @@ public:
       }
     });
     connect(process_, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
-      [this, start, status](int code, QProcess::ExitStatus exit_status) {
+      [this, start, status, settings](int code, QProcess::ExitStatus exit_status) {
         start->setEnabled(true);
+        settings->setEnabled(true);
         status->setText(code == 0 && exit_status == QProcess::NormalExit ?
           "Complete. Click to run again." : (task_error_.isEmpty() ?
           "Task stopped. See the terminal for details." : "Stopped: " + task_error_));
       });
     connect(process_, &QProcess::errorOccurred, this,
-      [this, start, status](QProcess::ProcessError error) {
+      [this, start, status, settings](QProcess::ProcessError error) {
         if (error == QProcess::FailedToStart) {
           status->setText(process_->errorString());
           start->setEnabled(true);
+          settings->setEnabled(true);
         }
       });
   }
@@ -89,6 +137,13 @@ public:
   }
 
 private:
+  struct MotionInput
+  {
+    QString parameter;
+    QDoubleSpinBox * widget;
+    double scale;
+  };
+  std::vector<MotionInput> inputs_;
   QProcess * process_;
   QString task_error_;
 };

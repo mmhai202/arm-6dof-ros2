@@ -28,7 +28,12 @@ real hardware. Use RViz to view and control the robot.
 
 The robot starts at `home`. In RViz, drag the goal and use **Plan & Execute**.
 With `--pick-place`, the scene waits for **Run Pick & Place** in the **Pick & Place**
-panel. That button runs the full shelf-to-box cycle; click again after it finishes to repeat. All scripts support `--help`.
+panel. Set speed and acceleration (% of joint limits), approach/lift distances,
+shelf withdrawal, transfer height and release clearance (mm) before starting.
+Transfer height is the TCP's absolute height above the robot base. Settings start
+from the demo YAML and apply to the next cycle; inputs are locked while running.
+This mode shows the planning scene without the manual Motion Planning panel.
+Click again after the cycle finishes to repeat. All scripts support `--help`.
 
 Demo settings: [shelf_pick_place.yaml](src/arm_moveit_config/config/shelf_pick_place.yaml).
 

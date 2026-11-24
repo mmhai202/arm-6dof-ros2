@@ -8,7 +8,7 @@ from arm_control.trajectory import wait_for_future
 from arm_description import GRIPPER_JOINT_NAMES, JOINT_NAMES
 from arm_description.model import RobotModel
 from arm_description.resources import load_yaml
-from arm_moveit_config.shelf_scene import OBJECT_ID, TOUCH_LINKS, scene_diff
+from arm_moveit_config.shelf_scene import OBJECT_ID, TOUCH_LINKS, ShelfScene, scene_diff
 from geometry_msgs.msg import PoseStamped
 from moveit_msgs.action import ExecuteTrajectory
 from moveit_msgs.msg import (
@@ -29,7 +29,11 @@ from std_msgs.msg import Header
 class ShelfTask(Node):
     def __init__(self, scene):
         super().__init__("shelf_pick_place", parameter_overrides=[Parameter("use_sim_time", value=True)])
-        self.scene = scene
+        for key, value in scene.motion.items():
+            self.declare_parameter(f"motion.{key}", value)
+        self.scene = ShelfScene({**scene.config, "motion": {
+            key: self.get_parameter(f"motion.{key}").value for key in scene.motion
+        }})
         self.model = RobotModel.load()
         self.service_clients = {}
         self.executor_client = ActionClient(self, ExecuteTrajectory, "/execute_trajectory")

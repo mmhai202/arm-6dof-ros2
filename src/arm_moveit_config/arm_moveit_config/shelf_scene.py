@@ -41,6 +41,15 @@ class ShelfScene:
         self.config = config or load_yaml("arm_moveit_config", "config/shelf_pick_place.yaml")
         self.frame = self.config["frame"]
         self.motion = self.config["motion"]
+        for key in ("velocity_scale", "acceleration_scale"):
+            if not math.isfinite(self.motion[key]) or not 0 < self.motion[key] <= 1:
+                raise ValueError(f"motion.{key} must be in (0, 1].")
+        for key in ("approach", "lift", "transfer_z", "cartesian_step", "planning_time"):
+            if not math.isfinite(self.motion[key]) or self.motion[key] <= 0:
+                raise ValueError(f"motion.{key} must be finite and positive.")
+        for key in ("withdraw_clearance", "place_clearance", "tcp_gap"):
+            if not math.isfinite(self.motion[key]) or self.motion[key] < 0:
+                raise ValueError(f"motion.{key} must be finite and nonnegative.")
         s, o, b = (self.config[key] for key in ("shelf", "object", "box"))
         for values in (s["size_xy"], o["size"], b["size_xy"]):
             if not all(math.isfinite(v) and v > 0 for v in values):

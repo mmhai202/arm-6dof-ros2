@@ -2,7 +2,7 @@
 frame: base_footprint
 shelf:
   center_xy: [0.52, 0.25]
-  size_xy: [0.36, 0.38]
+  size_xy: [0.36, 0.50]
   surface_z: 0.42
   top_z: 0.95
   thickness: 0.02
@@ -10,7 +10,7 @@ object:
   size: [0.06, 0.04, 0.04]
   center_xy: [0.43, 0.25]
 box:
-  center_xy: [0.40, -0.35]
+  center_xy: [-0.45, -0.25]
   size_xy: [0.28, 0.28]
   height: 0.18
   thickness: 0.015

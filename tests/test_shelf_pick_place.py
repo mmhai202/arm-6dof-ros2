@@ -81,6 +81,37 @@ class ShelfSceneTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "fit inside"):
             ShelfScene(config)
 
+    def test_invalid_motion_settings_are_rejected_before_planning(self):
+        for key, values in (
+            ("velocity_scale", (0.0, -0.1, 1.1, math.nan)),
+            ("acceleration_scale", (0.0, 1.1, math.inf)),
+            ("lift", (0.0, -0.1, math.inf)),
+            ("withdraw_clearance", (-0.1, math.nan)),
+            ("place_clearance", (-0.1, math.inf)),
+        ):
+            for value in values:
+                with self.subTest(key=key, value=value):
+                    config = copy.deepcopy(self.scene.config)
+                    config["motion"][key] = value
+                    with self.assertRaisesRegex(ValueError, f"motion.{key}"):
+                        ShelfScene(config)
+
+    def test_custom_motion_settings_update_waypoints_without_changing_fixtures(self):
+        config = copy.deepcopy(self.scene.config)
+        config["motion"].update(approach=0.12, lift=0.18, withdraw_clearance=0.22,
+                                transfer_z=0.65, place_clearance=0.01)
+        scene = ShelfScene(config)
+        stages = {name: target for name, _, target in scene.stages()}
+        grasp = stages["grasp"].position
+        self.assertAlmostEqual(stages["pre_grasp"].position.z - grasp.z, 0.12)
+        self.assertAlmostEqual(stages["lift"].position.z - grasp.z, 0.18)
+        shelf_front = config["shelf"]["center_xy"][0] - config["shelf"]["size_xy"][0] / 2
+        self.assertAlmostEqual(shelf_front - stages["leave_shelf"].position.x, 0.22)
+        self.assertAlmostEqual(stages["above_box"].position.z, 0.65)
+        payload_bottom = stages["place"].position.z - scene.offset - config["object"]["size"][2] / 2
+        self.assertAlmostEqual(payload_bottom - config["box"]["thickness"], 0.01)
+        self.assertEqual(scene.initial(), self.scene.initial())
+
     def test_visible_fingers_contact_cube_and_clear_supporting_shelf(self):
         root = ET.fromstring(xacro.process_file(str(package_file(
             "arm_description", "urdf/arm.urdf.xacro"))).toxml())
@@ -212,11 +243,14 @@ class TaskFailureTest(unittest.TestCase):
     def test_partial_cartesian_path_is_never_accepted(self):
         task = SimpleNamespace(scene=ShelfScene(), call=Mock(return_value=SimpleNamespace(
             error_code=MoveItErrorCodes(val=MoveItErrorCodes.SUCCESS), fraction=0.8)))
+        task.scene.motion.update(velocity_scale=0.3, acceleration_scale=0.2)
         with self.assertRaisesRegex(RuntimeError, "incomplete"):
             ShelfTask.plan_motion(task, "cartesian", ShelfScene().stages()[1][2], RobotState())
         request = task.call.call_args.args[2]
         self.assertTrue(request.avoid_collisions)
         self.assertGreater(request.revolute_jump_threshold, 0)
+        self.assertAlmostEqual(request.max_velocity_scaling_factor, 0.3)
+        self.assertAlmostEqual(request.max_acceleration_scaling_factor, 0.2)
 
     def test_failed_preflight_restores_scene_and_sends_no_motion(self):
         task = SimpleNamespace(

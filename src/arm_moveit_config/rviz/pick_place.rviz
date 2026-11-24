@@ -6,9 +6,7 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Global Options1
-        - /MotionPlanning1
-        - /MotionPlanning1/Planning Request1
-        - /MotionPlanning1/Planned Path1
+        - /Planning Scene1
         - /TF1
       Splitter Ratio: 0.5
     Tree Height: 720
@@ -46,25 +44,10 @@ Visualization Manager:
       Update Interval: 0
       Value: false
       Visual Enabled: true
-    - Class: moveit_rviz_plugin/MotionPlanning
+    - Class: moveit_rviz_plugin/PlanningScene
       Enabled: true
       Move Group Namespace: ""
-      Name: MotionPlanning
-      Planned Path:
-        Interrupt Display: true
-        Loop Animation: false
-        Robot Alpha: 0.25
-        Show Robot Collision: false
-        Show Robot Visual: true
-        Show Trail: false
-      Planning Group: arm
-      Planning Request:
-        Goal State Alpha: 0.15
-        Goal State Color: 90; 190; 235
-        Interactive Marker Size: 0.22
-        Query Goal State: false
-        Query Start State: false
-        Show Workspace: false
+      Name: Planning Scene
       Scene Robot:
         Robot Alpha: 1
         Show Robot Collision: false
@@ -74,7 +57,6 @@ Visualization Manager:
       Scene Geometry:
         Scene Alpha: 0.9
         Show Scene Geometry: true
-      Trajectory Topic: display_planned_path
       Value: true
     - Class: rviz_default_plugins/TF
       Enabled: false
