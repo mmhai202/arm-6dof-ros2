@@ -1,10 +1,12 @@
 """ROS trajectory messages and action handling shared by CLI and service nodes."""
 
+import math
 import threading
 import time
 
 from action_msgs.msg import GoalStatus
 from arm_description import JOINT_NAMES
+from arm_description.resources import load_yaml
 from builtin_interfaces.msg import Duration
 from control_msgs.action import FollowJointTrajectory
 import rclpy
@@ -16,6 +18,25 @@ ACTION_NAME = "/arm_controller/follow_joint_trajectory"
 
 class MotionStopError(RuntimeError):
     """The controller did not confirm that an interrupted motion ended."""
+
+
+def controller_start_tolerance():
+    """MoveIt's scalar start bound must accept the controllers' completed goals.
+
+    Controllers still enforce their individual joint position and stopped
+    velocity tolerances. This bound avoids a stricter second completion check
+    when the task submits the next, separately planned trajectory.
+    """
+    config = load_yaml("arm_control", "config/controllers.yaml")
+    tolerances = []
+    for name in ("arm_controller", "gripper_controller"):
+        parameters = config[name]["ros__parameters"]
+        for joint in parameters["joints"]:
+            value = float(parameters["constraints"][joint]["goal"])
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError(f"{name}.{joint}.goal must be finite and positive.")
+            tolerances.append(value)
+    return max(tolerances)
 
 
 def trajectory_goal(waypoints, *, joint_names=JOINT_NAMES):

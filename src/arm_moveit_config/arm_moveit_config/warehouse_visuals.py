@@ -22,15 +22,10 @@ def factory_markers(scene, phase, stage=""):
         pose=Pose(position=Point(x=0.0, y=-0.85, z=0.04), orientation=Quaternion(w=1.0)),
         scale=Vector3(z=0.033), color=ColorRGBA(r=0.88, g=0.95, b=0.97, a=1.0),
         text=phase.upper()))
-    lamp = ((0.95, 0.08, 0.05) if phase == "stopped" else
-            (0.98, 0.70, 0.06) if phase in ("planning", "executing", "perception") else
-            (0.08, 0.95, 0.38))
+    # Retire the phase-colored overlay; all three lamps belong to the static scene.
     markers.append(Marker(
         header=Header(frame_id=scene.frame), ns="factory_signage", id=8,
-        type=Marker.CUBE, action=Marker.ADD,
-        pose=Pose(position=Point(x=0.88, y=0.64, z=1.09), orientation=Quaternion(w=1.0)),
-        scale=Vector3(x=0.045, y=0.045, z=0.045),
-        color=ColorRGBA(r=lamp[0], g=lamp[1], b=lamp[2], a=1.0)))
+        action=Marker.DELETE))
     return MarkerArray(markers=markers)
 
 
@@ -39,8 +34,8 @@ def environment_markers(scene):
     colors = {item.id: item.color for item in initial.object_colors}
     markers = []
     for index, obj in enumerate(initial.world.collision_objects):
-        # The camera and status lamp each have a single, separate visual owner.
-        if obj.id in scene.dynamic_ids or obj.id == "tower_light_2" or colors[obj.id].a == 0:
+        # The camera has its own visual owner; the tower lamps stay static here.
+        if obj.id in scene.dynamic_ids or colors[obj.id].a == 0:
             continue
         markers.append(Marker(
             header=Header(frame_id=scene.frame), ns="factory_environment", id=index,

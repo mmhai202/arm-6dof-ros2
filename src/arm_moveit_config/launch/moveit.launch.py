@@ -1,6 +1,7 @@
 """MoveIt planning and RViz on top of the shared ros2_control bringup."""
 
 from arm_control.poses import load_named_poses
+from arm_control.trajectory import controller_start_tolerance
 from arm_description.launch import ROBOT_ARGUMENTS, robot_arguments, robot_description
 from arm_description.resources import load_yaml, package_file
 from launch import LaunchDescription
@@ -44,7 +45,7 @@ def generate_launch_description():
         "moveit_manage_controllers": False,
         "trajectory_execution.allowed_execution_duration_scaling": 1.2,
         "trajectory_execution.allowed_goal_duration_margin": 0.5,
-        "trajectory_execution.allowed_start_tolerance": 0.01,
+        "trajectory_execution.allowed_start_tolerance": controller_start_tolerance(),
     }
     scene_monitor = {
         "publish_planning_scene": True,

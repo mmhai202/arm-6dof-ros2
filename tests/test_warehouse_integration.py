@@ -90,7 +90,7 @@ class FactoryIntegrationTest(unittest.TestCase):
                     setattr(goal, name, motion[name])
                 goal.velocity_scale = goal.acceleration_scale = 1.0
             else:
-                self.assertEqual((motion["velocity_scale"], motion["acceleration_scale"]), (0.45, 0.40))
+                self.assertEqual((motion["velocity_scale"], motion["acceleration_scale"]), (0.80, 0.80))
             goal_future = client.send_goal_async(goal)
             rclpy.spin_until_future_complete(node, goal_future, timeout_sec=30)
             self.assertTrue(goal_future.done())

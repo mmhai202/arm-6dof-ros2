@@ -15,15 +15,21 @@ try:
     from arm_control.trajectory import trajectory_goal
     from arm_description import GRIPPER_JOINT_NAMES, JOINT_NAMES
     from arm_description.resources import load_yaml, package_file
-    from arm_moveit_config.gazebo_scene import ENVIRONMENT_ID, gazebo_models, payload_in_box, payload_is_settled
+    from arm_moveit_config.gazebo_scene import (
+        ENVIRONMENT_ID, environment_matches, gazebo_models, payload_in_box,
+        payload_is_settled, spawned_payloads_are_settled,
+    )
     from arm_moveit_config.gazebo_task import GazeboShelfTask, main
     from arm_moveit_config.scene_ownership import SceneOwnership
     from arm_moveit_config.shelf_scene import OBJECT_ID, ShelfScene
+    from action_msgs.msg import GoalStatus
     from gazebo_msgs.msg import ContactsState, ContactState, LinkStates
     from gazebo_msgs.srv import DeleteEntity, GetEntityState, SpawnEntity
     from geometry_msgs.msg import Point, Pose, Quaternion, Twist, Vector3, Wrench
     from rclpy.executors import ExternalShutdownException
     from sensor_msgs.msg import JointState
+    from moveit_msgs.msg import MoveItErrorCodes, RobotTrajectory
+    from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 except ImportError as exc:
     raise unittest.SkipTest("Activate Conda and source install/setup.bash") from exc
 
@@ -148,6 +154,83 @@ class PlacementFeedbackTest(unittest.TestCase):
                         GazeboShelfTask.wait_for_placement(task)
 
 
+class InitReadinessTest(unittest.TestCase):
+    def test_fixture_reuse_requires_same_complete_model_at_its_original_pose(self):
+        scene = ShelfScene()
+        xml = gazebo_models(scene)[ENVIRONMENT_ID]
+        links = ET.fromstring(xml).findall("model/link")
+        states = LinkStates(
+            name=[f"{ENVIRONMENT_ID}::{link.get('name')}" for link in links],
+            pose=[Pose(orientation=Quaternion(w=1.0)) for _ in links])
+        # New render UUIDs must not invalidate unchanged fixture geometry.
+        self.assertTrue(environment_matches(gazebo_models(scene)[ENVIRONMENT_ID], states))
+        changed = ShelfScene(copy.deepcopy(scene.config))
+        changed.config["shelf"]["size_xy"][0] += 0.01
+        self.assertFalse(environment_matches(gazebo_models(changed)[ENVIRONMENT_ID], states))
+        missing = copy.deepcopy(states)
+        del missing.name[0]
+        del missing.pose[0]
+        self.assertFalse(environment_matches(xml, missing))
+        states.pose[-1].position.x = 0.01
+        self.assertFalse(environment_matches(xml, states))
+        self.assertFalse(environment_matches(xml, None))
+
+    def task(self):
+        scene = ShelfScene()
+        scene.config["physics"]["placement_hold_time"] = 0.25
+        x, y, z = scene.pick_center
+        return SimpleNamespace(
+            scene=scene, physics=scene.config["physics"], spawn_center=scene.pick_center,
+            fault=None, check_cancel=Mock(), clock=0.0, now=lambda: 0.0,
+            world_stamp=0.0, world_states=LinkStates(name=[f"{OBJECT_ID}::{OBJECT_ID}"],
+                pose=[Pose(position=Point(x=x, y=y, z=z), orientation=Quaternion(w=1.0))],
+                twist=[Twist()]),
+        )
+
+    def test_init_finishes_after_consecutive_stationary_feedback_instead_of_fixed_delay(self):
+        task = self.task()
+        task.now = lambda: task.clock
+
+        def receive(*args, **kwargs):
+            task.clock += 0.1
+            task.world_stamp = task.clock
+            task.world_states.twist[0].linear.x = 0.1 if task.clock < 0.21 else 0.0
+
+        with patch("arm_moveit_config.gazebo_task.rclpy.spin_once", side_effect=receive):
+            GazeboShelfTask.wait_for_spawn_settle(task)
+        self.assertGreaterEqual(task.clock, 0.55)
+        self.assertLess(task.clock, task.physics["settle_time"])
+
+    def test_stale_or_repeated_feedback_cannot_complete_init(self):
+        task = self.task()
+        task.now = lambda: task.clock
+
+        def receive(*args, **kwargs):
+            task.clock += 0.1
+            task.world_stamp = 0.1
+
+        with patch("arm_moveit_config.gazebo_task.rclpy.spin_once", side_effect=receive):
+            with self.assertRaisesRegex(RuntimeError, "fresh Gazebo feedback"):
+                GazeboShelfTask.wait_for_spawn_settle(task)
+
+    def test_every_payload_must_be_present_stationary_and_near_its_spawn_position(self):
+        task = self.task()
+        states = task.world_states
+        centers = {OBJECT_ID: task.spawn_center, "second": [0.5, 0.1, 0.44]}
+        states.name.append("second::second")
+        states.pose.append(Pose(position=Point(x=0.5, y=0.1, z=0.44)))
+        states.twist.append(Twist())
+        self.assertTrue(spawned_payloads_are_settled(task.scene, states, centers))
+        for field, value in (("z", 0.02), ("x", float("nan"))):
+            changed = copy.deepcopy(states)
+            setattr(changed.pose[1].position, field, value)
+            self.assertFalse(spawned_payloads_are_settled(task.scene, changed, centers))
+        states.twist[1].angular.z = 1.0
+        self.assertFalse(spawned_payloads_are_settled(task.scene, states, centers))
+        states.twist.pop()
+        self.assertFalse(spawned_payloads_are_settled(task.scene, states, centers))
+
+
 class ControllerCommandTest(unittest.TestCase):
     def test_arm_goal_preserves_waypoints_and_normalizes_rounded_durations(self):
         positions = [0.1] * len(JOINT_NAMES)
@@ -188,6 +271,52 @@ class ControllerCommandTest(unittest.TestCase):
         for tolerance in goal.goal_tolerance:
             self.assertAlmostEqual(tolerance.position, task.physics["grip_compression"] + 0.004)
             self.assertEqual(tolerance.velocity, 0.02)
+
+
+class SequentialExecutionTest(unittest.TestCase):
+    @staticmethod
+    def task():
+        return SimpleNamespace(
+            fault=None, active_goal=None, context=Mock(), check_cancel=Mock(), executor_client=Mock(),
+            # Already accepted by the previous controller's 0.02 rad goal bound,
+            # but outside the old task's extra 0.008 rad settling gate.
+            latest_joints=JointState(name=list(JOINT_NAMES), position=[0.015] * 6),
+            wait_simulation_result=Mock(return_value=SimpleNamespace(
+                status=GoalStatus.STATUS_SUCCEEDED,
+                result=SimpleNamespace(error_code=MoveItErrorCodes(val=MoveItErrorCodes.SUCCESS)))),
+            hold_arm=Mock(),
+        )
+
+    def test_each_trajectory_is_sent_separately_without_a_second_settling_wait(self):
+        task = self.task()
+        trajectory = RobotTrajectory(joint_trajectory=JointTrajectory(
+            joint_names=list(JOINT_NAMES), points=[JointTrajectoryPoint(positions=[0.0] * 6)]))
+        handle = Mock(accepted=True)
+        with patch("arm_moveit_config.gazebo_task.wait_for_future", return_value=handle), \
+                patch("arm_moveit_config.gazebo_task.rclpy.spin_once") as spin:
+            for _ in range(2):
+                GazeboShelfTask.execute(task, trajectory)
+        self.assertEqual(task.executor_client.send_goal_async.call_count, 2)
+        for call in task.executor_client.send_goal_async.call_args_list:
+            self.assertEqual(call.args[0].trajectory, trajectory)
+        self.assertEqual(task.wait_simulation_result.call_count, 2)
+        spin.assert_not_called()
+        self.assertIsNone(task.active_goal)
+
+    def test_failed_controller_result_stops_execution(self):
+        task = self.task()
+        task.wait_simulation_result.return_value.status = GoalStatus.STATUS_ABORTED
+        trajectory = RobotTrajectory(joint_trajectory=JointTrajectory(
+            points=[JointTrajectoryPoint(positions=[0.0] * 6)]))
+        handle = Mock(accepted=True)
+        with patch("arm_moveit_config.gazebo_task.wait_for_future", return_value=handle), \
+                patch("arm_moveit_config.gazebo_task.rclpy.ok", return_value=True), \
+                patch("arm_moveit_config.gazebo_task.cancel_trajectory", return_value=True) as cancel:
+            with self.assertRaisesRegex(RuntimeError, "MoveIt execution failed"):
+                GazeboShelfTask.execute(task, trajectory)
+        task.hold_arm.assert_called_once()
+        cancel.assert_called_once_with(handle, node=task)
+        self.assertIsNone(task.active_goal)
 
 
 class ShutdownTest(unittest.TestCase):
@@ -247,7 +376,7 @@ class SceneResetTest(unittest.TestCase):
         task = SimpleNamespace(
             scene=scene, models={ENVIRONMENT_ID: "fixture XML", OBJECT_ID: "payload XML"},
             spawn_center=list(scene.pick_center),
-            physics=scene.config["physics"], now=Mock(return_value=10.0), advance=Mock(),
+            physics=scene.config["physics"], now=Mock(return_value=10.0), wait_for_spawn_settle=Mock(),
             payload_pose=Pose(), payload_center=np.zeros(3), model_stamp=9.0,
             last_contact={"left": 9.9, "right": 9.9}, contact_forces={"left": 5.0, "right": 5.0},
         )
@@ -259,7 +388,8 @@ class SceneResetTest(unittest.TestCase):
         def wait(present, names=None):
             events.append(("feedback", (present, names)))
             if not present:
-                task.world_links = ()
+                task.world_links = (() if names is None else tuple(
+                    link for link in task.world_links if link.split("::")[0] not in names))
             elif names:
                 task.world_links += tuple(f"{name}::link" for name in names)
             if present and names == (OBJECT_ID,):
@@ -285,12 +415,25 @@ class SceneResetTest(unittest.TestCase):
         self.assertLess(events.index(("feedback", (False, None))), events.index((SpawnEntity, ENVIRONMENT_ID)))
         self.assertLess(events.index(("feedback", (True, (ENVIRONMENT_ID,)))), events.index((SpawnEntity, OBJECT_ID)))
         self.assertLess(events.index((SpawnEntity, OBJECT_ID)), events.index(("feedback", (True, (OBJECT_ID,)))))
-        task.advance.assert_called_once_with(task.physics["settle_time"])
+        task.wait_for_spawn_settle.assert_called_once()
 
     def test_payload_on_floor_cannot_pass_scene_setup(self):
         task, _ = self.task(landed=False)
         with self.assertRaisesRegex(RuntimeError, "shelf pick position"):
             GazeboShelfTask.spawn_scene(task)
+
+    def test_reset_keeps_verified_fixtures_and_only_respawns_payload(self):
+        task, events = self.task()
+        links = ET.fromstring(gazebo_models(task.scene)[ENVIRONMENT_ID]).findall("model/link")
+        task.world_states = LinkStates(
+            name=[f"{ENVIRONMENT_ID}::{link.get('name')}" for link in links],
+            pose=[Pose(orientation=Quaternion(w=1.0)) for _ in links])
+        task.world_links = (*task.world_states.name, f"{OBJECT_ID}::link")
+        GazeboShelfTask.spawn_scene(task)
+        self.assertEqual([name for service, name in events if service is DeleteEntity], [OBJECT_ID])
+        self.assertEqual([name for service, name in events if service is SpawnEntity], [OBJECT_ID])
+        self.assertIn(("feedback", (False, (OBJECT_ID,))), events)
+        self.assertTrue(any(link.startswith(f"{ENVIRONMENT_ID}::") for link in task.world_links))
 
     def test_empty_scene_spawns_without_querying_missing_entities(self):
         task, events = self.task()

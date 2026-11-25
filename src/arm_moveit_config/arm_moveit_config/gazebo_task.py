@@ -30,7 +30,10 @@ from rclpy.qos import qos_profile_sensor_data
 from rclpy.signals import SignalHandlerOptions
 from std_msgs.msg import String
 
-from .gazebo_scene import gazebo_models, payload_is_settled
+from .gazebo_scene import (
+    ENVIRONMENT_ID, environment_matches, gazebo_models, payload_is_settled,
+    spawned_payloads_are_settled,
+)
 from .scene_ownership import SceneOwnership
 from .perception_input import (
     DetectionWindow, PERCEPTION_PARAMETERS, sample_spawn_center, validate_perception_config,
@@ -94,6 +97,8 @@ class GazeboShelfTask(ShelfTask):
         self.payload_center = None
         self.tool_tilt = 0.0
         self.world_links = ()
+        self.world_states = None
+        self.world_stamp = None
         self.link_generation = 0
         # Gazebo merges the fixed TCP/palm links into link_6. Derive that
         # constant offset from the URDF rather than duplicating tool dimensions.
@@ -152,6 +157,8 @@ class GazeboShelfTask(ShelfTask):
 
     def on_links(self, message):
         self.world_links = tuple(message.name)
+        self.world_states = message
+        self.world_stamp = self.now()
         self.link_generation += 1
         object_id = getattr(self, "object_id", OBJECT_ID)
         wrist_name, payload_name = "arm_sim::link_6", f"{object_id}::{object_id}"
@@ -394,16 +401,24 @@ class GazeboShelfTask(ShelfTask):
         # A fresh physics snapshot also covers an empty initial scene. Some
         # Gazebo versions fail to reply to GetEntityState for missing models.
         self.wait_for_models(present=True, names=())
-        existing = {name for name in self.models
+        keep_environment = environment_matches(
+            self.models[ENVIRONMENT_ID], getattr(self, "world_states", None))
+        reset_models = {name: xml for name, xml in self.models.items()
+                        if name != ENVIRONMENT_ID or not keep_environment}
+        existing = {name for name in reset_models
                     if any(link.startswith(f"{name}::") for link in self.world_links)}
         # Remove the payload before its supports, then finish all removals
         # before reusing model names. A service reply alone is not a scene snapshot.
-        for name in reversed(self.models):
+        for name in reversed(reset_models):
             if name in existing:
                 result = self.call(DeleteEntity, "/delete_entity", DeleteEntity.Request(name=name))
                 if not result.success:
                     raise RuntimeError(f"Cannot reset {name}: {result.status_message}")
-        self.wait_for_models(present=False)
+        if keep_environment:
+            self.get_logger().info("Reusing unchanged Gazebo fixtures.")
+            self.wait_for_models(present=False, names=tuple(reset_models))
+        else:
+            self.wait_for_models(present=False)
         self.payload_pose = self.payload_center = self.model_stamp = None
         self.detected_center = None
         self.camera_center = None
@@ -411,7 +426,7 @@ class GazeboShelfTask(ShelfTask):
         self.payload_twist = None
         self.last_contact = dict.fromkeys(self.last_contact, -math.inf)
         self.contact_forces = dict.fromkeys(self.contact_forces, 0.0)
-        for name, xml in self.models.items():
+        for name, xml in reset_models.items():
             request = SpawnEntity.Request(name=name, xml=xml)
             request.initial_pose.orientation.w = 1.0
             spawn_positions = getattr(self.scene, "spawn_positions", {OBJECT_ID: self.spawn_center})
@@ -428,12 +443,43 @@ class GazeboShelfTask(ShelfTask):
                  if any(link.startswith(f"{name}::") for link in self.world_links)}
         if found != set(self.models):
             raise RuntimeError("Gazebo removed a model while creating the demo scene.")
-        self.advance(self.physics["settle_time"])
+        self.wait_for_spawn_settle()
         if self.payload_pose is None or self.now() - self.model_stamp > self.physics["contact_timeout"]:
             raise RuntimeError("Gazebo did not publish fresh feedback for the spawned payload.")
         p = self.payload_pose.position
         if np.linalg.norm(np.array([p.x, p.y, p.z]) - self.spawn_center) > self.physics["max_grasp_drift"]:
             raise RuntimeError("Spawned payload did not settle at the shelf pick position.")
+
+    def wait_for_spawn_settle(self):
+        """Finish init as soon as fresh physics confirms every object is stable."""
+        centers = getattr(self.scene, "spawn_positions", {OBJECT_ID: self.spawn_center})
+        hold = self.physics["placement_hold_time"]
+        timeout = max(self.physics["settle_time"], hold + self.physics["contact_timeout"])
+        after = self.now()
+        deadline = after + timeout
+        wall_deadline = time.monotonic() + max(30, timeout * 5)
+        stable_since = last_stamp = None
+        while self.now() < deadline and time.monotonic() < wall_deadline:
+            self.check_cancel()
+            if self.fault:
+                raise RuntimeError(self.fault)
+            stamp = self.world_stamp
+            fresh = stamp is not None and stamp > after and 0 <= self.now() - stamp < self.physics["contact_timeout"]
+            if not fresh:
+                stable_since = None
+            elif last_stamp is None or stamp > last_stamp:
+                if last_stamp is not None and stamp - last_stamp >= self.physics["contact_timeout"]:
+                    stable_since = None
+                last_stamp = stamp
+                if spawned_payloads_are_settled(self.scene, self.world_states, centers):
+                    if stable_since is None:
+                        stable_since = stamp
+                    if stamp - stable_since >= hold:
+                        return
+                else:
+                    stable_since = None
+            rclpy.spin_once(self, timeout_sec=0.05)
+        raise RuntimeError("Spawned payloads did not settle near their reset positions with fresh Gazebo feedback.")
 
     def squeeze(self):
         if not self.gripper.wait_for_server(timeout_sec=20):
@@ -497,21 +543,10 @@ class GazeboShelfTask(ShelfTask):
     def execute(self, trajectory):
         if self.fault:
             raise RuntimeError(self.fault)
-        # Preflight paths start at ideal endpoints. Let the physical PID settle
-        # within MoveIt's 0.01 rad start check before submitting the next path.
-        first = trajectory.joint_trajectory.points[0]
-        names = trajectory.joint_trajectory.joint_names
-        deadline, wall_deadline = self.now() + 10.0, time.monotonic() + 30.0
-        while True:
-            self.check_cancel()
-            actual = dict(zip(self.latest_joints.name, self.latest_joints.position))
-            if all(abs(actual[name] - target) < 0.008 for name, target in zip(names, first.positions)):
-                break
-            if self.fault:
-                raise RuntimeError(self.fault)
-            if self.now() >= deadline or time.monotonic() >= wall_deadline:
-                raise RuntimeError("Robot did not settle at the next preflight trajectory start.")
-            rclpy.spin_once(self, timeout_sec=0.05)
+        self.check_cancel()
+        # The previous controller goal already checked position and velocity
+        # tolerances. MoveIt validates this start against the same configured
+        # position bound; do not impose another, tighter settling threshold.
         if not self.executor_client.wait_for_server(timeout_sec=15):
             raise RuntimeError("MoveIt execution is unavailable.")
         handle = wait_for_future(self.executor_client.send_goal_async(

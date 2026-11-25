@@ -40,11 +40,12 @@ class FactoryVisualsTest(unittest.TestCase):
             markers = factory_markers(self.scene, phase).markers
             text = [m for m in markers if m.action == Marker.ADD and m.type == Marker.TEXT_VIEW_FACING]
             self.assertEqual([(m.id, m.text) for m in text], [(7, phase.upper())])
-            self.assertEqual({m.id for m in markers if m.action == Marker.DELETE}, set(range(7)))
+            self.assertEqual({m.id for m in markers if m.action == Marker.DELETE}, {*range(7), 8})
+            self.assertFalse(any(m.action == Marker.ADD and m.type == Marker.CUBE for m in markers))
 
     def test_lamp_and_camera_are_not_drawn_twice(self):
         initial = self.scene.initial()
-        excluded = {*self.scene.dynamic_ids, "tower_light_2"}
+        excluded = set(self.scene.dynamic_ids)
         excluded.update(item.id for item in initial.object_colors if item.color.a == 0)
         expected = {index for index, obj in enumerate(initial.world.collision_objects) if obj.id not in excluded}
         self.assertEqual({marker.id for marker in environment_markers(self.scene).markers}, expected)

@@ -1,5 +1,6 @@
 """Build Gazebo geometry from the same boxes MoveIt uses for planning."""
 
+import hashlib
 import math
 import uuid
 import xml.etree.ElementTree as ET
@@ -8,6 +9,7 @@ from .shelf_scene import OBJECT_ID
 
 
 ENVIRONMENT_ID = "shelf_environment"
+FIXTURE_SIGNATURE_PREFIX = "fixture_signature_"
 
 
 def _text(parent, tag, value):
@@ -82,7 +84,51 @@ def gazebo_models(scene):
                       visual_suffix=visual_suffix, color=colors.get(obj.id))
         else:
             _box_link(models[ENVIRONMENT_ID], obj, visual_suffix=visual_suffix, color=colors.get(obj.id))
+    # An invisible, collision-free link identifies the exact static fixture
+    # geometry/materials. Visual UUIDs change on respawn and are not geometry.
+    fixture_xml = ET.tostring(roots[ENVIRONMENT_ID], encoding="unicode")
+    signature = hashlib.sha256(fixture_xml.replace(visual_suffix, "").encode()).hexdigest()[:32]
+    ET.SubElement(models[ENVIRONMENT_ID], "link", name=FIXTURE_SIGNATURE_PREFIX + signature)
     return {name: ET.tostring(root, encoding="unicode") for name, root in roots.items()}
+
+
+def environment_matches(xml, states):
+    """Reuse only a complete, unchanged fixture model still at its original pose."""
+    if states is None:
+        return False
+    model = ET.fromstring(xml).find("model")
+    names = {f"{ENVIRONMENT_ID}::{link.get('name')}" for link in model.findall("link")}
+    marker = next((name for name in names if name.startswith(
+        f"{ENVIRONMENT_ID}::{FIXTURE_SIGNATURE_PREFIX}")), None)
+    poses = dict(zip(states.name, states.pose))
+    if marker is None or not names.issubset(poses):
+        return False
+    p, q = poses[marker].position, poses[marker].orientation
+    values = (p.x, p.y, p.z, q.x, q.y, q.z, q.w)
+    return (all(math.isfinite(value) for value in values)
+            and max(abs(value) for value in values[:6]) < 1e-8 and abs(abs(q.w) - 1) < 1e-8)
+
+
+def spawned_payloads_are_settled(scene, states, centers):
+    """All reset objects must be near their spawn pose with low measured speeds."""
+    if states is None:
+        return False
+    physics = scene.config["physics"]
+    indices = {name: index for index, name in enumerate(states.name)}
+    for name, center in centers.items():
+        index = indices.get(f"{name}::{name}")
+        if index is None or index >= len(states.pose) or index >= len(states.twist):
+            return False
+        pose, twist = states.pose[index], states.twist[index]
+        xyz = (pose.position.x, pose.position.y, pose.position.z)
+        linear = (twist.linear.x, twist.linear.y, twist.linear.z)
+        angular = (twist.angular.x, twist.angular.y, twist.angular.z)
+        if (not all(math.isfinite(value) for value in (*xyz, *linear, *angular))
+                or math.dist(xyz, center) > physics["max_grasp_drift"]
+                or math.hypot(*linear) > physics["placement_linear_speed"]
+                or math.hypot(*angular) > physics["placement_angular_speed"]):
+            return False
+    return True
 
 
 def payload_in_box(scene, position, tolerance=0.01, *, orientation=None):

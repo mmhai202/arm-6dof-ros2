@@ -1,15 +1,44 @@
 """Cancellation must be sent and acknowledged before reporting a stopped goal."""
 
 from concurrent.futures import Future
+import copy
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
 try:
     from action_msgs.msg import GoalStatus
-    from arm_control.trajectory import cancel_trajectory, execute_trajectory, trajectory_goal
+    from arm_control.trajectory import (
+        cancel_trajectory, controller_start_tolerance, execute_trajectory, trajectory_goal,
+    )
+    from arm_description.resources import load_yaml
 except ImportError as exc:
     raise unittest.SkipTest("Activate Conda and source install/setup.bash") from exc
+
+
+class ControllerToleranceTest(unittest.TestCase):
+    def test_start_validation_accepts_every_configured_controller_goal(self):
+        config = load_yaml("arm_control", "config/controllers.yaml")
+        tolerance = controller_start_tolerance()
+        self.assertAlmostEqual(tolerance, 0.02)
+        for name in ("arm_controller", "gripper_controller"):
+            parameters = config[name]["ros__parameters"]
+            for joint in parameters["joints"]:
+                self.assertLessEqual(parameters["constraints"][joint]["goal"], tolerance)
+        # A controller configuration change must also change MoveIt's bound.
+        changed = copy.deepcopy(config)
+        changed["arm_controller"]["ros__parameters"]["constraints"]["joint_2"]["goal"] = 0.03
+        with patch("arm_control.trajectory.load_yaml", return_value=changed):
+            self.assertAlmostEqual(controller_start_tolerance(), 0.03)
+
+    def test_unbounded_or_invalid_goal_tolerances_are_rejected(self):
+        config = load_yaml("arm_control", "config/controllers.yaml")
+        for value in (0.0, -1.0, float("nan"), float("inf")):
+            with self.subTest(value=value):
+                config["arm_controller"]["ros__parameters"]["constraints"]["joint_1"]["goal"] = value
+                with patch("arm_control.trajectory.load_yaml", return_value=config):
+                    with self.assertRaisesRegex(ValueError, "finite and positive"):
+                        controller_start_tolerance()
 
 
 class TrajectoryCancellationTest(unittest.TestCase):

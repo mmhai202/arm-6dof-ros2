@@ -24,8 +24,8 @@ motion:
   withdraw_clearance: 0.12
   transfer_z: 0.62
   place_clearance: 0.015
-  velocity_scale: 0.45
-  acceleration_scale: 0.40
+  velocity_scale: 0.80
+  acceleration_scale: 0.80
   cartesian_step: 0.005
   planning_time: 6.0
 perception:
@@ -46,7 +46,7 @@ physics:
   min_contact_force: 0.2
   max_grasp_drift: 0.018
   contact_timeout: 0.5
-  settle_time: 1.5
+  settle_time: 1.5  # Spawn settling timeout; finish early after verified stable feedback.
   placement_hold_time: 0.4
   placement_timeout: 8.0
   placement_linear_speed: 0.01
