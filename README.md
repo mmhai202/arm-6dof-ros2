@@ -7,15 +7,23 @@
 Requires Miniforge/Miniconda with `conda` on `PATH`. Run from the workspace root:
 
 ```bash
-./scripts/install_dependencies.sh
+./scripts/setup.sh
+```
+
+## Build
+
+Setup above installs dependencies and builds the workspace. To rebuild after code changes:
+
+```bash
+./scripts/build.sh
 ```
 
 ## Run
 
 ```bash
-./scripts/run_moveit.sh              # Manual control in RViz
-./scripts/run_moveit.sh --pick-place # Shelf-to-box pick-and-place
-./scripts/run_moveit.sh --warehouse  # Factory color sorting
+./scripts/run.sh              # Manual control in RViz
+./scripts/run.sh --pick-place # Shelf-to-box pick-and-place
+./scripts/run.sh --warehouse  # Factory color sorting
 ```
 
 Use **Plan & Execute**, **Run Pick & Place**, or **Run** in RViz.
@@ -29,7 +37,7 @@ and [warehouse](src/arm_moveit_config/config/warehouse.yaml).
 ## Tests
 
 ```bash
-source scripts/install_dependencies.sh
+source scripts/setup.sh
 arm_activate_conda
 source install/setup.bash
 colcon test --packages-select arm_moveit_config
@@ -47,5 +55,5 @@ Cleanup first stops this workspace's ROS, Gazebo and RViz processes, including
 suspended terminal jobs, then removes `build/`, `install/`, and `log/`. It waits
 for shutdown and forces any remaining processes to exit before deleting files.
 Before launching again, run
-`./scripts/install_dependencies.sh` to rebuild the workspace. Execute this script
+`./scripts/setup.sh` to rebuild the workspace. Execute this script
 directly; sourcing it only loads helper functions and does not install or build.

@@ -73,7 +73,7 @@ arm_init_conda() {
     echo "[error] ARM_CONDA_PREFIX must not point to the Conda base environment." >&2
     return 1
   fi
-  # Used by install_dependencies.sh after this helper is sourced.
+  # Used by setup.sh after this helper is sourced.
   # shellcheck disable=SC2034
   ARM_CONDA_EXE="${conda_executable}"
   # shellcheck disable=SC1091
@@ -83,7 +83,7 @@ arm_init_conda() {
 arm_activate_conda() {
   if [[ ! -d "${ARM_CONDA_PREFIX}/conda-meta" ]]; then
     echo "[error] Missing Conda environment: ${ARM_CONDA_PREFIX}" >&2
-    echo "Run ${ARM_ROOT_DIR}/scripts/install_dependencies.sh first." >&2
+    echo "Run ${ARM_ROOT_DIR}/scripts/setup.sh first." >&2
     return 1
   fi
   arm_init_conda || return 1
@@ -205,7 +205,7 @@ PY
     missing=1
   fi
   if [[ "${missing}" -ne 0 ]]; then
-    echo "[error] Missing or broken dependencies. Run ${ARM_ROOT_DIR}/scripts/install_dependencies.sh" >&2
+    echo "[error] Missing or broken dependencies. Run ${ARM_ROOT_DIR}/scripts/setup.sh" >&2
     return 1
   fi
 }
@@ -214,7 +214,7 @@ arm_source_workspace() {
   local package="$1" launch_file="$2" workspace_setup="${ARM_ROOT_DIR}/install/setup.bash"
   if [[ ! -f "${workspace_setup}" ]]; then
     echo "[missing] Workspace setup: ${workspace_setup}" >&2
-    echo "Run ${ARM_ROOT_DIR}/scripts/install_dependencies.sh first." >&2
+    echo "Run ${ARM_ROOT_DIR}/scripts/setup.sh first." >&2
     return 1
   fi
   local had_nounset=0 source_status=0
@@ -224,7 +224,7 @@ arm_source_workspace() {
   source "${workspace_setup}" || source_status=$?
   if [[ "${had_nounset}" -eq 1 ]]; then set -u; fi
   if [[ "${source_status}" -ne 0 ]]; then
-    echo "[error] Cannot source workspace. Run ${ARM_ROOT_DIR}/scripts/install_dependencies.sh" >&2
+    echo "[error] Cannot source workspace. Run ${ARM_ROOT_DIR}/scripts/setup.sh" >&2
     return 1
   fi
   if ! "${CONDA_PREFIX}/bin/python3" - "${ARM_ROOT_DIR}/install" "${package}" "${launch_file}" <<'PY'
@@ -247,9 +247,18 @@ except Exception as error:
     sys.exit(1)
 PY
   then
-    echo "Run ${ARM_ROOT_DIR}/scripts/install_dependencies.sh first." >&2
+    echo "Run ${ARM_ROOT_DIR}/scripts/setup.sh first." >&2
     return 1
   fi
+}
+
+arm_build_workspace() {
+  echo "== Build workspace =="
+  cd "${ARM_ROOT_DIR}"
+  colcon build --symlink-install --base-paths "${ARM_ROOT_DIR}/src" --cmake-args \
+    "-DPython3_EXECUTABLE=${CONDA_PREFIX}/bin/python" \
+    -DPython3_FIND_STRATEGY=LOCATION
+  echo "[ok] Workspace ready. Use run.sh (Gazebo physics + RViz)."
 }
 
 arm_install_dependencies() {
@@ -264,14 +273,7 @@ arm_install_dependencies() {
   arm_activate_conda
   arm_check_dependencies all
 
-  echo "== Build workspace =="
-  cd "${ARM_ROOT_DIR}"
-  colcon build --symlink-install --base-paths "${ARM_ROOT_DIR}/src" --cmake-args \
-    "-DPython_EXECUTABLE=${CONDA_PREFIX}/bin/python" \
-    "-DPython3_EXECUTABLE=${CONDA_PREFIX}/bin/python" \
-    "-DPYTHON_EXECUTABLE=${CONDA_PREFIX}/bin/python" \
-    -DPython3_FIND_STRATEGY=LOCATION -DPython_FIND_STRATEGY=LOCATION
-  echo "[ok] Workspace ready. Use run_moveit.sh (Gazebo physics + RViz)."
+  arm_build_workspace
 }
 
 # Launchers source the helpers above; installation only happens on direct execution.

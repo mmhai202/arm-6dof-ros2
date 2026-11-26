@@ -127,7 +127,7 @@ echo '# mock workspace overlay' > install/setup.bash
         path.write_text(contents)
         path.chmod(0o755)
 
-    def run_script(self, name="install_dependencies.sh", *args, expected=0):
+    def run_script(self, name="setup.sh", *args, expected=0):
         result = subprocess.run(
             ["bash", str(self.root / "scripts" / name), *args],
             cwd=self.temp.name, env=self.env, text=True, capture_output=True,
@@ -146,6 +146,19 @@ echo '# mock workspace overlay' > install/setup.bash
         self.assertIn("--override-channels --strict-channel-priority", calls)
         self.run_script()
         self.assertIn("install --yes --prefix", self.log.read_text())
+
+    def test_builder_builds_without_installing_dependencies(self):
+        (self.prefix / "conda-meta").mkdir()
+        self.run_script("build.sh")
+        calls = self.log.read_text()
+        self.assertIn("build --symlink-install", calls)
+        self.assertIn(f"-DPython3_EXECUTABLE={self.prefix}/bin/python", calls)
+        self.assertNotIn("--yes", calls)
+        self.assertNotIn("launch launch", calls)
+
+    def test_builder_requires_existing_environment(self):
+        self.assertIn("setup.sh", self.run_script("build.sh", expected=1))
+        self.assertFalse(self.log.exists())
 
     def test_missing_ros_package_fails(self):
         self.env["MOCK_MISSING_PACKAGE"] = "controller_manager"
@@ -193,7 +206,7 @@ echo '# mock workspace overlay' > install/setup.bash
         self.write_executable(self.prefix / "bin/cc", "#!/bin/bash\nexit 1\n")
         output = self.run_script(expected=1)
         self.assertIn("[missing] CC compiler is not runnable", output)
-        self.assertIn("install_dependencies.sh", output)
+        self.assertIn("setup.sh", output)
 
     def test_install_failure_stops_before_activation(self):
         self.env["MOCK_INSTALL_FAIL"] = "1"
@@ -208,7 +221,7 @@ echo '# mock workspace overlay' > install/setup.bash
     def test_installer_rejects_all_arguments_without_installing(self):
         for argument in ("--unknown", "--check-only", "--with-moveit", "anything"):
             with self.subTest(argument=argument):
-                self.run_script("install_dependencies.sh", argument, expected=1)
+                self.run_script("setup.sh", argument, expected=1)
                 self.assertFalse(self.log.exists())
 
     def test_help_needs_no_conda_and_preserves_workspace(self):
@@ -216,7 +229,7 @@ echo '# mock workspace overlay' > install/setup.bash
         artifact.parent.mkdir()
         artifact.touch()
         self.env["CONDA_EXE"] = "/missing/conda"
-        for script in ("install_dependencies.sh", "run_moveit.sh", "clean_ws.sh"):
+        for script in ("setup.sh", "build.sh", "run.sh", "clean_ws.sh"):
             for flag in ("-h", "--help"):
                 with self.subTest(script=script, flag=flag):
                     self.assertIn("Usage:", self.run_script(script, flag))
@@ -320,15 +333,15 @@ except KeyboardInterrupt:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.touch()
 
-    def test_scripts_directory_has_only_three_entry_points(self):
+    def test_scripts_directory_has_expected_entry_points(self):
         self.assertEqual({path.name for path in (REPO / "scripts").iterdir()}, {
-            "clean_ws.sh", "install_dependencies.sh", "run_moveit.sh",
+            "clean_ws.sh", "setup.sh", "build.sh", "run.sh",
         })
 
     def test_launchers_only_launch_with_conda(self):
         self.prepare_workspace()
         for script, launch, option in (
-            ("run_moveit.sh", "arm_moveit_config moveit.launch.py", "use_moveit_rviz:=true"),
+            ("run.sh", "arm_moveit_config moveit.launch.py", "use_moveit_rviz:=true"),
         ):
             with self.subTest(script=script):
                 self.run_script(script)
@@ -339,10 +352,10 @@ except KeyboardInterrupt:
                 self.assertNotIn("--yes", calls)
 
     def test_launchers_report_missing_environment_without_installing(self):
-        for script in ("run_moveit.sh",):
+        for script in ("run.sh",):
             with self.subTest(script=script):
                 output = self.run_script(script, expected=1)
-                self.assertIn("install_dependencies.sh", output)
+                self.assertIn("setup.sh", output)
                 self.assertFalse(self.log.exists())
 
     def test_launcher_opens_rviz_with_background_physics(self):
@@ -353,7 +366,7 @@ except KeyboardInterrupt:
             (("--warehouse",), "warehouse.launch.py"),
         ):
             with self.subTest(options=options):
-                self.run_script("run_moveit.sh", *options)
+                self.run_script("run.sh", *options)
                 calls = self.log.read_text()
                 self.assertIn(f"arm_moveit_config {launch}", calls)
                 if options:
@@ -371,23 +384,23 @@ except KeyboardInterrupt:
         self.env["CONDA_EXE"] = "/missing/conda"
         for flag in ("--headless", "--gazebo-gui", "--scene-only", "--plan-only", "--unknown"):
             with self.subTest(flag=flag):
-                output = self.run_script("run_moveit.sh", "--warehouse", flag, expected=1)
+                output = self.run_script("run.sh", "--warehouse", flag, expected=1)
                 self.assertIn(f"Unknown option: {flag}", output)
                 self.assertFalse(self.log.exists())
 
     def test_gazebo_requires_its_control_plugin(self):
         self.prepare_workspace()
         self.env["MOCK_MISSING_PACKAGE"] = "gazebo_ros2_control"
-        output = self.run_script("run_moveit.sh", expected=1)
+        output = self.run_script("run.sh", expected=1)
         self.assertIn("[missing] gazebo_ros2_control", output)
         self.assertNotIn("launch ", self.log.read_text())
 
     def test_launchers_report_missing_workspace_without_building(self):
         (self.prefix / "conda-meta").mkdir()
-        for script in ("run_moveit.sh",):
+        for script in ("run.sh",):
             with self.subTest(script=script):
                 output = self.run_script(script, expected=1)
-                self.assertIn("install_dependencies.sh", output)
+                self.assertIn("setup.sh", output)
                 calls = self.log.read_text()
                 self.assertNotIn("build ", calls)
                 self.assertNotIn("launch ", calls)
@@ -396,16 +409,16 @@ except KeyboardInterrupt:
     def test_launcher_reports_missing_runtime_dependency_without_installing(self):
         self.prepare_workspace()
         self.env["MOCK_MISSING_PACKAGE"] = "controller_manager"
-        output = self.run_script("run_moveit.sh", expected=1)
+        output = self.run_script("run.sh", expected=1)
         self.assertIn("[missing] controller_manager", output)
-        self.assertIn("install_dependencies.sh", output)
+        self.assertIn("setup.sh", output)
         self.assertNotIn("launch ", self.log.read_text())
         self.assertNotIn("--yes", self.log.read_text())
 
     def test_moveit_launcher_requires_moveit_dependencies(self):
         self.prepare_workspace()
         self.env["MOCK_MISSING_PACKAGE"] = "moveit_ros_move_group"
-        output = self.run_script("run_moveit.sh", expected=1)
+        output = self.run_script("run.sh", expected=1)
         self.assertIn("[missing] moveit_ros_move_group", output)
         self.assertNotIn("launch ", self.log.read_text())
 
@@ -413,24 +426,24 @@ except KeyboardInterrupt:
         self.prepare_workspace()
         for command in ("colcon", "cmake", "make", "ninja", "cc", "c++", "gazebo"):
             (self.prefix / "bin" / command).unlink()
-        for script in ("run_moveit.sh",):
+        for script in ("run.sh",):
             self.run_script(script)
 
     def test_launcher_reports_incomplete_build(self):
         self.prepare_workspace()
         launch = self.root / "install/arm_moveit_config/share/arm_moveit_config/launch/moveit.launch.py"
         launch.unlink()
-        output = self.run_script("run_moveit.sh", expected=1)
+        output = self.run_script("run.sh", expected=1)
         self.assertIn("[missing] Workspace package arm_moveit_config", output)
-        self.assertIn("install_dependencies.sh", output)
+        self.assertIn("setup.sh", output)
         self.assertNotIn("launch ", self.log.read_text())
 
     def test_launcher_reports_broken_workspace_import(self):
         self.prepare_workspace()
         (self.prefix / "modules/arm_control/poses.py").write_text("raise ImportError('stale build')")
-        output = self.run_script("run_moveit.sh", expected=1)
+        output = self.run_script("run.sh", expected=1)
         self.assertIn("stale build", output)
-        self.assertIn("install_dependencies.sh", output)
+        self.assertIn("setup.sh", output)
         self.assertNotIn("launch ", self.log.read_text())
 
 

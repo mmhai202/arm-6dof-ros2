@@ -28,8 +28,8 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-# shellcheck source=scripts/install_dependencies.sh
-source "${ROOT_DIR}/scripts/install_dependencies.sh"
+# shellcheck source=scripts/setup.sh
+source "${ROOT_DIR}/scripts/setup.sh"
 arm_activate_conda
 arm_check_dependencies gazebo
 arm_source_workspace arm_moveit_config "${launch_file}"

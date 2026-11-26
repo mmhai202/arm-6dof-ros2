@@ -1,7 +1,7 @@
 """Physics checks against a running, disposable Gazebo session.
 
 ARM_RUN_GAZEBO_TESTS=1 python -m unittest discover -s tests -p test_gazebo_integration.py -v
-Use the same ROS_DOMAIN_ID as run_moveit.sh.
+Use the same ROS_DOMAIN_ID as run.sh.
 These tests move the arm and temporarily spawn a falling cube.
 """
 

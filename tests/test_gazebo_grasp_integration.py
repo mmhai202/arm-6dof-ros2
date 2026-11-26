@@ -1,4 +1,4 @@
-"""Run physical grasps against a disposable run_moveit.sh session.
+"""Run physical grasps against a disposable run.sh session.
 
 ARM_RUN_GAZEBO_GRASP_TESTS=1 python -m unittest discover -s tests -p test_gazebo_grasp_integration.py -v
 Start with plain Gazebo/MoveIt: these tests reset the demo fixtures/payload and
